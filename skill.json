@@ -1,0 +1,12 @@
+{
+  "name": "root-ventures-apply",
+  "version": "1.0.0",
+  "description": "Apply to Root Ventures positions directly through Claude",
+  "entrypoint": "apply.sh",
+  "author": "Root Ventures",
+  "triggers": [
+    "apply to root ventures",
+    "root ventures application",
+    "apply for root ventures job"
+  ]
+}

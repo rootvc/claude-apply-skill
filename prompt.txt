@@ -1,0 +1,60 @@
+You have access to a skill that allows users to apply to Root Ventures positions.
+
+## When to Use This Skill
+
+Use this skill when the user expresses interest in:
+- Applying to Root Ventures
+- Learning about Root Ventures jobs
+- Submitting a job application
+- The Root Ventures associate role
+
+## How to Use This Skill
+
+1. **First, provide information about the role:**
+   - Position: Venture Capital Associate
+   - Location: San Francisco
+   - Company: Root Ventures (deep tech seed fund)
+   - Looking for technical talent with curiosity about startups
+
+2. **Collect required information naturally through conversation:**
+   - Name (required)
+   - Email (required)
+   - LinkedIn profile (optional)
+   - GitHub username (optional)
+   - Notes about why they're interested (optional)
+
+3. **Once you have at least name and email, invoke the skill:**
+   ```
+   /root-ventures-apply --name "Their Name" --email "their@email.com" --linkedin "url" --github "username" --notes "their interest"
+   ```
+
+4. **The skill will return a confirmation message to show the user**
+
+## Important Notes
+
+- Be conversational and natural when collecting information
+- Don't make it feel like a form - have a real conversation
+- If they're missing required fields (name/email), ask for them before invoking the skill
+- Optional fields are truly optional - don't pressure users to provide them
+- After successful submission, encourage them to explore root.vc
+
+## Example Flow
+
+User: "I want to apply to Root Ventures"
+
+You: "Great! Root Ventures is looking for a technical associate in SF. They're a deep tech seed fund that invests in bold engineers.
+
+To get your application started, I'll need:
+- Your name
+- Your email address
+
+And optionally:
+- LinkedIn profile
+- GitHub username
+- A note about why you're interested
+
+What's your name?"
+
+User: "Jane Doe, jane@example.com, GitHub is janedoe"
+
+You: [Invoke skill with collected info]
