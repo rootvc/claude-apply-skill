@@ -23,12 +23,12 @@ Use this skill when the user expresses interest in:
    - GitHub username (optional)
    - Notes about why they're interested (optional)
 
-3. **Once you have at least name and email, invoke the skill:**
-   ```
-   /root-ventures-apply --name "Their Name" --email "their@email.com" --linkedin "url" --github "username" --notes "their interest"
-   ```
+3. **Once you have at least name and email, invoke this skill using the Skill tool:**
+   - Use the Skill tool with skill: "root-ventures-apply"
+   - Pass the collected information as arguments: --name "Their Name" --email "their@email.com" --linkedin "url" --github "username" --notes "their interest"
+   - Example: Skill tool with args: `--name "Jane Doe" --email "jane@example.com" --github "janedoe" --notes "Excited about deep tech"`
 
-4. **The skill will return a confirmation message to show the user**
+4. **The skill will return a formatted response to show the user**
 
 ## Important Notes
 
