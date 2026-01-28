@@ -10,11 +10,15 @@ Just run this one command:
 curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/install.sh | bash
 ```
 
-That's it! The installer will:
+The installer will:
 - Download the skill files
 - Automatically launch Claude CLI
-- Load the application skill
-- Start the conversational application process
+- Pre-load the application skill
+
+Then simply say to Claude:
+```
+I want to apply to Root Ventures
+```
 
 Claude will then:
 - Guide you through the application
@@ -33,11 +37,12 @@ Claude will then:
 
 1. You run the one-line install command
 2. The installer downloads skill files and launches Claude
-3. Claude automatically reads the skill instructions
-4. Claude starts the conversational application process
-5. You provide your information naturally
-6. Claude submits your application to Attio
-7. You receive immediate confirmation
+3. Claude loads the skill instructions and waits for you
+4. You say "I want to apply to Root Ventures"
+5. Claude starts the conversational application process
+6. You provide your information naturally
+7. Claude submits your application to Attio
+8. You receive immediate confirmation
 
 ## Example
 
@@ -48,9 +53,15 @@ $ curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/in
 📥 Downloading skill files...
 ✅ Root Ventures Apply Skill installed successfully!
 
-Starting Claude with the application skill loaded...
+Launching Claude...
+
+Once Claude opens, just say: 'I want to apply to Root Ventures'
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[Claude launches]
+
+You: I want to apply to Root Ventures
 
 Claude: Great! Root Ventures is looking for a technical associate in SF.
         Let me collect some information. What's your name?

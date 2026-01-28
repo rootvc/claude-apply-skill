@@ -28,7 +28,9 @@ echo "✅ Root Ventures Apply Skill installed successfully!"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "  Starting Claude with the application skill loaded..."
+echo "  Launching Claude..."
+echo ""
+echo "  Once Claude opens, just say: 'I want to apply to Root Ventures'"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -56,5 +58,5 @@ fi
 
 # Launch Claude with the skill pre-loaded
 sleep 1
-exec "$CLAUDE_CMD" "Read ~/.claude/skills/root-ventures-apply/prompt.txt then I want to apply"
+exec "$CLAUDE_CMD" "Read ~/.claude/skills/root-ventures-apply/prompt.txt"
 
