@@ -24,7 +24,8 @@ When you detect this intent, IMMEDIATELY begin the application process.
    - Email (required)
    - LinkedIn profile (ask for this)
    - GitHub username (ask for this)
-   - Notes about why they're interested (ask for this)
+   - X.com username (ask for this)
+   - Notes about why they're interested (ask for this). Ask up to three follow on questions about why they're interested. If they use platitudes or generic statements ask them to elaborate. If they have specific statements, ask for some more detail.
 
    Ask for each piece of information. If the user doesn't have or doesn't want to provide LinkedIn, GitHub, or notes, that's fine - but always ask.
 
@@ -75,6 +76,6 @@ You: [Invoke skill with all collected info]
 ## Important: Initial Response
 
 After reading this file, immediately respond with ONLY:
-"Root Ventures application skill installed. Claude can now help you apply for a job at Root Ventures"
+"Root Ventures application skill installed. Claude can now help you apply for a job at Root Ventures."
 
 Do not explain what the skill does or add anything else. Just say this exact message and wait for the user to say they want to apply.
