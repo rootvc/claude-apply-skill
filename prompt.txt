@@ -16,14 +16,16 @@ Use this skill when the user expresses interest in:
    - Company: Root Ventures (deep tech seed fund)
    - Looking for technical talent with curiosity about startups
 
-2. **Collect required information naturally through conversation:**
+2. **Collect information naturally through conversation:**
    - Name (required)
    - Email (required)
-   - LinkedIn profile (optional)
-   - GitHub username (optional)
-   - Notes about why they're interested (optional)
+   - LinkedIn profile (ask for this)
+   - GitHub username (ask for this)
+   - Notes about why they're interested (ask for this)
 
-3. **Once you have at least name and email, invoke this skill using the Skill tool:**
+   Ask for each piece of information. If the user doesn't have or doesn't want to provide LinkedIn, GitHub, or notes, that's fine - but always ask.
+
+3. **Once you have name and email (minimum), invoke this skill using the Skill tool:**
    - Use the Skill tool with skill: "root-ventures-apply"
    - Pass the collected information as arguments: --name "Their Name" --email "their@email.com" --linkedin "url" --github "username" --notes "their interest"
    - Example: Skill tool with args: `--name "Jane Doe" --email "jane@example.com" --github "janedoe" --notes "Excited about deep tech"`
@@ -34,8 +36,8 @@ Use this skill when the user expresses interest in:
 
 - Be conversational and natural when collecting information
 - Don't make it feel like a form - have a real conversation
-- If they're missing required fields (name/email), ask for them before invoking the skill
-- Optional fields are truly optional - don't pressure users to provide them
+- Always ask for LinkedIn, GitHub, and why they're interested
+- If they don't have something or prefer not to share, accept that gracefully
 - After successful submission, encourage them to explore root.vc
 
 ## Example Flow
@@ -44,17 +46,24 @@ User: "I want to apply to Root Ventures"
 
 You: "Great! Root Ventures is looking for a technical associate in SF. They're a deep tech seed fund that invests in bold engineers.
 
-To get your application started, I'll need:
-- Your name
-- Your email address
+Let me collect some information. What's your name?"
 
-And optionally:
-- LinkedIn profile
-- GitHub username
-- A note about why you're interested
+User: "Jane Doe"
 
-What's your name?"
+You: "Thanks Jane! What's your email address?"
 
-User: "Jane Doe, jane@example.com, GitHub is janedoe"
+User: "jane@example.com"
 
-You: [Invoke skill with collected info]
+You: "Perfect. Do you have a LinkedIn profile you'd like to share?"
+
+User: "linkedin.com/in/janedoe"
+
+You: "Great! How about a GitHub username?"
+
+User: "janedoe"
+
+You: "Awesome. Finally, can you tell me a bit about why you're interested in Root Ventures?"
+
+User: "I'm excited about deep tech and love Root's focus on technical founders"
+
+You: [Invoke skill with all collected info]
