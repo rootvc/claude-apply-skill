@@ -35,7 +35,7 @@ We're one of the first VCs to accept applications through AI.
 curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/install.sh | bash
 ```
 
-Then open Claude CLI and say: "I want to apply to Root Ventures"
+Then open Claude CLI and first say: "Read ~/.claude/skills/root-ventures-apply/prompt.txt" then "I want to apply to Root Ventures"
 
 **Don't have Claude CLI?** Install from https://claude.ai/download
 ```
@@ -52,7 +52,7 @@ We've built a Claude skill that lets you apply directly through your terminal.
 Installation (one command):
 curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/install.sh | bash
 
-Then open Claude CLI and say: "I want to apply to Root Ventures"
+Then open Claude CLI and first say: "Read ~/.claude/skills/root-ventures-apply/prompt.txt" then "I want to apply to Root Ventures"
 
 It's that simple. Looking forward to your application!
 
@@ -84,7 +84,7 @@ rm -rf ~/.claude/skills/root-ventures-apply
 bash install.sh
 ```
 
-Then open Claude CLI and say: "I want to apply to Root Ventures"
+Then open Claude CLI and first say: "Read ~/.claude/skills/root-ventures-apply/prompt.txt" then "I want to apply to Root Ventures"
 
 ## Alternative Distribution Methods
 

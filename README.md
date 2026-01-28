@@ -4,8 +4,14 @@ Apply to Root Ventures positions directly through Claude CLI.
 
 ## Usage
 
-In Claude CLI, simply say:
+In Claude CLI, follow these steps:
 
+**Step 1:** Load the skill by saying:
+```
+Read ~/.claude/skills/root-ventures-apply/prompt.txt
+```
+
+**Step 2:** Then say:
 ```
 I want to apply to Root Ventures
 ```
