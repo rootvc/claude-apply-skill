@@ -75,6 +75,6 @@ You: [Invoke skill with all collected info]
 ## Important: Initial Response
 
 After reading this file, immediately respond with ONLY:
-"Ready to help you apply to Root Ventures."
+"Root Ventures application skill installed. Claude can now help you apply for a job at Root Ventures"
 
-Do not explain what the skill does. Just acknowledge you're ready and wait for the user to say they want to apply.
+Do not explain what the skill does or add anything else. Just say this exact message and wait for the user to say they want to apply.

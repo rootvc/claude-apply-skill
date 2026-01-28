@@ -61,7 +61,7 @@ Once Claude opens, just say: 'I want to apply to Root Ventures'
 
 [Claude launches]
 
-Claude: Ready to help you apply to Root Ventures.
+Claude: Root Ventures application skill installed. Claude can now help you apply for a job at Root Ventures
 
 You: I want to apply to Root Ventures
 
