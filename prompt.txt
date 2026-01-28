@@ -25,12 +25,13 @@ Use this skill when the user expresses interest in:
 
    Ask for each piece of information. If the user doesn't have or doesn't want to provide LinkedIn, GitHub, or notes, that's fine - but always ask.
 
-3. **Once you have name and email (minimum), invoke this skill using the Skill tool:**
-   - Use the Skill tool with skill: "root-ventures-apply"
+3. **Once you have the information, invoke the skill using the Bash tool:**
+   - Use the Bash tool to run: `~/.claude/skills/root-ventures-apply/apply.sh`
    - Pass the collected information as arguments: --name "Their Name" --email "their@email.com" --linkedin "url" --github "username" --notes "their interest"
-   - Example: Skill tool with args: `--name "Jane Doe" --email "jane@example.com" --github "janedoe" --notes "Excited about deep tech"`
+   - Example: `~/.claude/skills/root-ventures-apply/apply.sh --name "Jane Doe" --email "jane@example.com" --github "janedoe" --notes "Excited about deep tech"`
+   - Always include all fields you collected, even if some are empty strings
 
-4. **The skill will return a formatted response to show the user**
+4. **The skill will return a formatted response that you should show to the user**
 
 ## Important Notes
 
