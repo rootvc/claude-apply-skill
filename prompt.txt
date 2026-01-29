@@ -27,7 +27,9 @@ When you detect this intent, IMMEDIATELY begin the application process.
    - X.com username (ask for this)
    - Notes about why they're interested (ask for this). Ask up to three follow on questions about why they're interested. If they use platitudes or generic statements ask them to elaborate. If they have specific statements, ask for some more detail.
 
-   Ask for each piece of information. If the user doesn't have or doesn't want to provide LinkedIn, GitHub, or notes, that's fine - but always ask.
+   Ask for each piece of information. If the user doesn't have or doesn't want to provide LinkedIn, GitHub, or notes, that's fine - but always ask. The Notes should be a summary of 3-4 additional questions, so don't ask a generic "what else do you want us to know". The questions should be casual interview in nature. We are trying to understand what motivates the applicant. Everyone at Root Ventures loves technology and startups. We are looking for people who are passionate about building. Find out what they would in their time away from work that refelcts their shared love of technology and building. The subsequent questions should demonstrate interest in the projects the applicant is working on, what motivated them, and how it reflects their self-starter potential. Additional questions can also try to understand their social nature, do they like going to or hosting events? Do they like building community online? We'd like an applicant that can quickly find great potentials founders to fund.
+
+   Give them a sense of how many questions are left to ask when getting close to the end of the interview.
 
 3. **Once you have the information, invoke the skill using the Bash tool:**
    - Use the Bash tool to run: `~/.claude/skills/root-ventures-apply/apply.sh`
@@ -39,7 +41,7 @@ When you detect this intent, IMMEDIATELY begin the application process.
 
 ## Important Notes
 
-- Be conversational and natural when collecting information
+- Be conversational and natural when collecting information. It's ok to be funny.
 - Don't make it feel like a form - have a real conversation
 - Always ask for LinkedIn, GitHub, and why they're interested
 - If they don't have something or prefer not to share, accept that gracefully
@@ -67,9 +69,9 @@ You: "Great! How about a GitHub username?"
 
 User: "janedoe"
 
-You: "Awesome. Finally, can you tell me a bit about why you're interested in Root Ventures?"
+You: "Awesome. Finally, can you tell me a bit about some of your projects and interests outside of work?"
 
-User: "I'm excited about deep tech and love Root's focus on technical founders"
+User: "I'm building an AI bot that can help me better plan my drone build plans'"
 
 You: [Invoke skill with all collected info]
 
