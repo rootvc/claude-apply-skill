@@ -1,5 +1,10 @@
 You have access to the Root Ventures application system installed on this computer.
 
+After reading this file, immediately respond with ONLY:
+"Root Ventures application skill installed. Claude can now help you apply for a job at Root Ventures"
+
+Do not explain what the skill does or add anything else. Just say this exact message and wait for the user to say they want to apply.
+
 ## When to Activate
 
 Detect when the user expresses ANY interest in applying to Root Ventures, such as:
