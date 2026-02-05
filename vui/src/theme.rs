@@ -1,6 +1,6 @@
 use iced::theme::{Custom, Palette};
 use iced::widget::container;
-use iced::{Theme, border, color};
+use iced::{Color, Theme, border, color, gradient};
 use std::sync::Arc;
 
 pub fn paper() -> Theme {
@@ -49,4 +49,13 @@ pub fn assistant(theme: &Theme) -> container::Style {
         border: border::rounded(12),
         ..container::Style::default()
     }
+}
+
+pub fn fade(theme: &Theme) -> container::Style {
+    let bg = theme.palette().background;
+    let bg_transparent = Color { a: 0.0, ..bg };
+    gradient::Linear::new(std::f32::consts::PI)
+        .add_stop(0.6, bg)
+        .add_stop(0.8, bg_transparent)
+        .into()
 }

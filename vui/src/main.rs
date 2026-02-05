@@ -235,12 +235,13 @@ impl App {
                             && let State::Processing {
                                 ref mut pending_text,
                             } = self.state
-                                && let Some(text) = pending_text.take() {
-                                    self.transcript.push(Line {
-                                        role: Role::Assistant,
-                                        text,
-                                    });
-                                }
+                            && let Some(text) = pending_text.take()
+                        {
+                            self.transcript.push(Line {
+                                role: Role::Assistant,
+                                text,
+                            });
+                        }
                         Task::none()
                     }
                 }
@@ -288,12 +289,13 @@ impl App {
                     if let State::Processing {
                         ref mut pending_text,
                     } = self.state
-                        && let Some(text) = pending_text.take() {
-                            self.transcript.push(Line {
-                                role: Role::Assistant,
-                                text,
-                            });
-                        }
+                        && let Some(text) = pending_text.take()
+                    {
+                        self.transcript.push(Line {
+                            role: Role::Assistant,
+                            text,
+                        });
+                    }
                     self.state = State::Done;
                     Task::none()
                 }
@@ -457,7 +459,8 @@ impl App {
                 .align_x(Center)
                 .width(Fill)
             )
-            .center_y(Fill),
+            .center_y(Fill)
+            .style(theme::fade),
         ];
 
         center(content).into()
