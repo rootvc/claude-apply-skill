@@ -32,6 +32,7 @@ EMAIL=""
 LINKEDIN=""
 GITHUB=""
 NOTES=""
+SOURCE_LABEL=""
 
 # Simple argument parsing
 while [[ $# -gt 0 ]]; do
@@ -56,11 +57,20 @@ while [[ $# -gt 0 ]]; do
       NOTES="$2"
       shift 2
       ;;
+    --source)
+      SOURCE_LABEL="$2"
+      shift 2
+      ;;
     *)
       shift
       ;;
   esac
 done
+
+# Default source label (keeps Claude behavior if not provided)
+if [[ -z "$SOURCE_LABEL" ]]; then
+  SOURCE_LABEL="Claude Skill"
+fi
 
 # Validate required fields
 if [[ -z "$NAME" ]] || [[ -z "$EMAIL" ]]; then
@@ -79,9 +89,9 @@ fi
 if [[ -n "$NOTES" ]]; then
   NOTES="$NOTES
 
-Applied using claude skill"
+Applied using $SOURCE_LABEL"
 else
-  NOTES="Applied using claude skill"
+  NOTES="Applied using $SOURCE_LABEL"
 fi
 
 # Build JSON payload using jq to properly escape values
@@ -91,6 +101,7 @@ JSON_PAYLOAD=$(jq -n \
   --arg linkedin "$LINKEDIN" \
   --arg github "$GITHUB" \
   --arg notes "$NOTES" \
+  --arg source "$SOURCE_LABEL" \
   '{
     name: $name,
     email: $email,
@@ -98,7 +109,7 @@ JSON_PAYLOAD=$(jq -n \
     github: $github,
     notes: $notes,
     position: "Venture Capital Associate",
-    source: "Claude Skill"
+    source: $source
   }'
 )
 
@@ -122,7 +133,7 @@ if [[ "$HTTP_CODE" == "202" ]] || [[ "$HTTP_CODE" == "200" ]]; then
   echo "• If there's a good fit, someone will reach out to schedule a conversation"
   echo "• In the meantime, check out our portfolio at https://root.vc"
   echo ""
-  echo "🚀 Applied via Claude Skill - extra points for technical creativity!"
+  echo "🚀 Applied via $SOURCE_LABEL - extra points for technical creativity!"
   exit 0
 else
   echo "❌ **Error submitting application**"

@@ -1,29 +1,25 @@
 # Root Ventures Application Skill
 
-Apply to Root Ventures positions directly through Claude CLI.
+Apply to Root Ventures positions directly through Claude or Codex CLI.
 
 ## Installation & Usage
 
 Just run this one command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/install.sh | bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/install.sh)"
 ```
 
 The installer will:
+- Detect whether you have Claude, Codex, or both
+- Prompt you when a choice is needed
 - Download the skill files
-- Automatically launch Claude CLI
-- Pre-load the application skill
+- Launch the selected CLI
 
-Then simply say to Claude:
+Then simply say:
 ```
 I want to apply to Root Ventures
 ```
-
-Claude will then:
-- Guide you through the application
-- Collect your information conversationally
-- Submit directly to Root Ventures
 
 ## What You'll Provide
 
@@ -36,18 +32,19 @@ Claude will then:
 ## How It Works
 
 1. You run the one-line install command
-2. The installer downloads skill files and launches Claude
-3. Claude loads the skill instructions and waits for you
-4. You say "I want to apply to Root Ventures"
-5. Claude starts the conversational application process
-6. You provide your information naturally
-7. Claude submits your application to Attio
-8. You receive immediate confirmation
+2. The installer selects (or asks you to select) Claude or Codex
+3. The installer downloads skill files and launches your CLI
+4. Your CLI loads the skill instructions and waits for you
+5. You say "I want to apply to Root Ventures"
+6. The CLI starts the conversational application process
+7. You provide your information naturally
+8. The application script submits your application to Attio
+9. You receive immediate confirmation
 
 ## Example
 
 ```bash
-$ curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/install.sh | bash
+$ bash -c "$(curl -fsSL https://raw.githubusercontent.com/rootvc/claude-apply-skill/main/install.sh)"
 
 🚀 Installing Root Ventures Apply Skill...
 📥 Downloading skill files...
@@ -79,7 +76,7 @@ Claude: ✅ Application submitted successfully!
 
 ## Source Tracking
 
-Applications submitted through this skill are tagged with `source: "Claude Skill"` in Attio, and "Applied using claude skill" is added to your notes.
+Applications submitted through this skill are tagged with `source: "Claude Skill"` or `source: "Codex Skill"` in Attio, and "Applied using Claude Skill" / "Applied using Codex Skill" is added to your notes.
 
 ## Other Ways to Apply
 
