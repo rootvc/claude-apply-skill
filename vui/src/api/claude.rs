@@ -67,7 +67,7 @@ pub struct ToolUse {
     pub input: serde_json::Value,
 }
 
-const SYSTEM: &str = include_str!("../../../prompt.txt");
+const SYSTEM: &str = include_str!("../../prompt.txt");
 
 impl Client {
     pub fn new(api_key: String) -> Self {
