@@ -6,8 +6,7 @@ use api::claude;
 use iced::Length::FillPortion;
 use iced::time::{self, milliseconds};
 use iced::widget::{
-    bottom, canvas, center, column, container, right, row, scrollable, space, stack,
-    text,
+    bottom, canvas, center, column, container, right, row, scrollable, space, stack, text,
 };
 use iced::{
     Center, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme, color,
@@ -232,19 +231,16 @@ impl App {
                         )
                     } else {
                         // No TTS — show text immediately as fallback
-                        if !is_complete {
-                            if let State::Processing {
+                        if !is_complete
+                            && let State::Processing {
                                 ref mut pending_text,
                             } = self.state
-                            {
-                                if let Some(text) = pending_text.take() {
+                                && let Some(text) = pending_text.take() {
                                     self.transcript.push(Line {
                                         role: Role::Assistant,
                                         text,
                                     });
                                 }
-                            }
-                        }
                         Task::none()
                     }
                 }
@@ -292,14 +288,12 @@ impl App {
                     if let State::Processing {
                         ref mut pending_text,
                     } = self.state
-                    {
-                        if let Some(text) = pending_text.take() {
+                        && let Some(text) = pending_text.take() {
                             self.transcript.push(Line {
                                 role: Role::Assistant,
                                 text,
                             });
                         }
-                    }
                     self.state = State::Done;
                     Task::none()
                 }
@@ -452,6 +446,7 @@ impl App {
         };
 
         let content = stack![
+            bottom(transcript_view).width(Fill).padding(10),
             container(
                 column![
                     container(circle).width(300).height(300),
@@ -463,7 +458,6 @@ impl App {
                 .width(Fill)
             )
             .center_y(Fill),
-            bottom(transcript_view).width(Fill).padding(10),
         ];
 
         center(content).into()

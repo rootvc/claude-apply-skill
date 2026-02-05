@@ -1,8 +1,8 @@
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::io::Cursor;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -51,9 +51,8 @@ impl<S: Source<Item = f32>> Iterator for Level<S> {
         self.buffer.push(sample);
 
         if self.buffer.len() >= 1024 {
-            let rms = (self.buffer.iter().map(|s| s * s).sum::<f32>()
-                / self.buffer.len() as f32)
-                .sqrt();
+            let rms =
+                (self.buffer.iter().map(|s| s * s).sum::<f32>() / self.buffer.len() as f32).sqrt();
             self.level.store(rms.to_bits(), Ordering::Relaxed);
             self.buffer.clear();
         }

@@ -56,7 +56,11 @@ impl Client {
         Ok(bytes.to_vec())
     }
 
-    pub async fn transcribe(&self, audio_samples: &[f32], sample_rate: u32) -> Result<String, String> {
+    pub async fn transcribe(
+        &self,
+        audio_samples: &[f32],
+        sample_rate: u32,
+    ) -> Result<String, String> {
         let wav_data = encode_wav(audio_samples, sample_rate);
 
         let part = reqwest::multipart::Part::bytes(wav_data)

@@ -1,5 +1,5 @@
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::mpsc;
 
 pub struct Capture {
@@ -15,9 +15,7 @@ impl Capture {
             .default_input_device()
             .ok_or("No input device available")?;
 
-        let config = device
-            .default_input_config()
-            .map_err(|e| e.to_string())?;
+        let config = device.default_input_config().map_err(|e| e.to_string())?;
 
         let (sender, receiver) = mpsc::channel();
 
