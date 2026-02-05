@@ -23,7 +23,7 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-read -p "Enter choice (1 or 2): " choice
+read -p "Enter choice (1 or 2): " choice </dev/tty
 
 case $choice in
   1)
