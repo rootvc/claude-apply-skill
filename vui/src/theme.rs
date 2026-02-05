@@ -1,5 +1,6 @@
 use iced::theme::{Custom, Palette};
-use iced::{color, Theme};
+use iced::widget::container;
+use iced::{border, color, Theme};
 use std::sync::Arc;
 
 pub fn paper() -> Theme {
@@ -22,4 +23,24 @@ pub fn paper_dark() -> Theme {
         warning: color!(0x216609),
         danger: color!(0xcc3e28),
     })))
+}
+
+pub fn user(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(palette.primary.weak.color.into()),
+        text_color: Some(palette.primary.weak.text),
+        border: border::rounded(12),
+        ..container::Style::default()
+    }
+}
+
+pub fn assistant(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(palette.background.weak.color.into()),
+        text_color: Some(palette.background.weak.text),
+        border: border::rounded(12),
+        ..container::Style::default()
+    }
 }

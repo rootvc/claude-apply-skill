@@ -6,7 +6,8 @@ use api::claude;
 use iced::Length::FillPortion;
 use iced::time::{self, milliseconds};
 use iced::widget::{
-    bottom, canvas, center, column, container, responsive, row, scrollable, space, stack, text,
+    bottom, canvas, center, column, container, right, row, scrollable, space, stack,
+    text,
 };
 use iced::{
     Center, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme, color,
@@ -398,20 +399,15 @@ impl App {
         let transcript_lines: Vec<Element<'_, Message>> = self
             .transcript
             .iter()
-            .enumerate()
-            .map(|(i, line)| {
-                let is_latest = i == self.transcript.len() - 1;
-                let color = if is_latest { text_color } else { dim_color };
+            .map(|line| {
+                let bubble = container(text(&line.text).size(18))
+                    .padding(padding::all(10).left(14).right(14))
+                    .max_width(500);
 
-                let prefix = match line.role {
-                    Role::User => "You: ",
-                    Role::Assistant => "",
-                };
-
-                text(format!("{}{}", prefix, line.text))
-                    .size(18)
-                    .color(color)
-                    .into()
+                match line.role {
+                    Role::User => right(bubble.style(theme::user)).into(),
+                    Role::Assistant => bubble.style(theme::assistant).into(),
+                }
             })
             .collect();
 
