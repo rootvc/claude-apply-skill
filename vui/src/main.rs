@@ -1,11 +1,12 @@
 mod api;
 mod audio;
+mod theme;
 
 use api::claude::Message as ChatMessage;
 use iced::mouse;
 use iced::time::{self, milliseconds};
-use iced::widget::{canvas, center, column, container, text};
-use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme};
+use iced::widget::{canvas, center, column, container, scrollable, text};
+use iced::{color, system, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -27,6 +28,7 @@ enum Message {
     ClaudeReady(Result<String, String>),
     StartListening,
     StopListening,
+    ThemeChanged(iced::theme::Mode),
 }
 
 #[allow(dead_code)]
@@ -39,18 +41,32 @@ enum State {
     Done,
 }
 
+#[derive(Debug, Clone)]
+enum Role {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone)]
+struct Line {
+    role: Role,
+    text: String,
+}
+
 struct App {
     state: State,
     start: Instant,
     cache: canvas::Cache,
     messages: Vec<ChatMessage>,
-    subtitle: String,
+    transcript: Vec<Line>,
     elevenlabs: Option<Arc<api::elevenlabs::Client>>,
     chat: Option<Arc<api::claude::Client>>,
     playback: Option<audio::Playback>,
     capture: Option<audio::Capture>,
     audio_buffer: Vec<f32>,
+    audio_level: f32,
     silence_frames: usize,
+    theme_mode: iced::theme::Mode,
 }
 
 impl App {
@@ -84,17 +100,23 @@ impl App {
             start: Instant::now(),
             cache: canvas::Cache::default(),
             messages: Vec::new(),
-            subtitle: "Say something to begin...".to_string(),
+            transcript: Vec::new(),
             elevenlabs,
             chat,
             playback,
             capture: None,
             audio_buffer: Vec::new(),
+            audio_level: 0.0,
             silence_frames: 0,
+            theme_mode: iced::theme::Mode::Dark,
         };
 
-        // Start listening for the user
-        (app, Task::done(Message::StartListening))
+        let task = Task::batch([
+            Task::done(Message::StartListening),
+            system::theme().map(Message::ThemeChanged),
+        ]);
+
+        (app, task)
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -127,6 +149,10 @@ impl App {
                             / samples.len() as f32)
                             .sqrt();
 
+                        // Smooth audio level for visual display
+                        let target_level = (rms * 10.0).min(1.0);
+                        self.audio_level = self.audio_level * 0.8 + target_level * 0.2;
+
                         if rms < 0.01 {
                             self.silence_frames += 1;
                         } else {
@@ -145,20 +171,26 @@ impl App {
                 Task::none()
             }
 
+            Message::ThemeChanged(mode) => {
+                self.theme_mode = mode;
+                Task::none()
+            }
+
             Message::ClaudeReady(result) => match result {
                 Ok(response) => {
-                    // Check if conversation is complete
                     let is_complete = response.contains("APPLICATION_COMPLETE");
                     let display_text = response.replace("APPLICATION_COMPLETE", "").trim().to_string();
 
                     self.messages.push(ChatMessage::assistant(&display_text));
-                    self.subtitle = display_text.clone();
+                    self.transcript.push(Line {
+                        role: Role::Assistant,
+                        text: display_text.clone(),
+                    });
 
                     if is_complete {
                         self.state = State::Done;
                     }
 
-                    // Speak the response
                     if let Some(tts) = &self.elevenlabs {
                         let tts = tts.clone();
                         Task::perform(
@@ -171,7 +203,10 @@ impl App {
                 }
                 Err(e) => {
                     eprintln!("Claude error: {}", e);
-                    self.subtitle = format!("Error: {}", e);
+                    self.transcript.push(Line {
+                        role: Role::Assistant,
+                        text: format!("Error: {}", e),
+                    });
                     self.state = State::Done;
                     Task::none()
                 }
@@ -182,14 +217,17 @@ impl App {
                     if let Some(ref playback) = self.playback {
                         playback.play(audio_data);
                         self.state = State::Speaking {
-                            text: self.subtitle.clone(),
+                            text: self.transcript.last().map(|l| l.text.clone()).unwrap_or_default(),
                         };
                     }
                     Task::none()
                 }
                 Err(e) => {
                     eprintln!("TTS error: {}", e);
-                    self.subtitle = format!("Error: {}", e);
+                    self.transcript.push(Line {
+                        role: Role::Assistant,
+                        text: format!("Error: {}", e),
+                    });
                     self.state = State::Done;
                     Task::none()
                 }
@@ -205,8 +243,8 @@ impl App {
 
             Message::StartListening => {
                 self.state = State::Listening;
-                self.subtitle = "Listening...".to_string();
                 self.audio_buffer.clear();
+                self.audio_level = 0.0;
                 self.silence_frames = 0;
                 self.capture = audio::Capture::new().ok();
                 Task::none()
@@ -215,7 +253,7 @@ impl App {
             Message::StopListening => {
                 self.capture = None;
                 self.state = State::Processing;
-                self.subtitle = "Processing...".to_string();
+                self.audio_level = 0.0;
 
                 let buffer = std::mem::take(&mut self.audio_buffer);
                 let sample_rate = audio::Capture::sample_rate();
@@ -235,7 +273,10 @@ impl App {
                 Ok(transcript) => {
                     eprintln!("User said: {}", transcript);
                     self.messages.push(ChatMessage::user(&transcript));
-                    self.subtitle = format!("You: {}", transcript);
+                    self.transcript.push(Line {
+                        role: Role::User,
+                        text: transcript,
+                    });
 
                     if let Some(chat) = &self.chat {
                         let chat = chat.clone();
@@ -250,7 +291,10 @@ impl App {
                 }
                 Err(e) => {
                     eprintln!("Transcription error: {}", e);
-                    self.subtitle = format!("Error: {}", e);
+                    self.transcript.push(Line {
+                        role: Role::Assistant,
+                        text: format!("Error: {}", e),
+                    });
                     Task::done(Message::StartListening)
                 }
             },
@@ -260,23 +304,84 @@ impl App {
     fn view(&self) -> Element<'_, Message> {
         let circle = canvas(self as &Self).width(Fill).height(Fill);
 
-        let subtitle = text(&self.subtitle).size(24).color(Color::WHITE);
+        let text_color = self.theme().palette().text;
+        let dim_color = Color {
+            a: 0.5,
+            ..text_color
+        };
+
+        let transcript_lines: Vec<Element<'_, Message>> = self
+            .transcript
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                let is_latest = i == self.transcript.len() - 1;
+                let color = if is_latest { text_color } else { dim_color };
+
+                let prefix = match line.role {
+                    Role::User => "You: ",
+                    Role::Assistant => "",
+                };
+
+                text(format!("{}{}", prefix, line.text))
+                    .size(18)
+                    .color(color)
+                    .into()
+            })
+            .collect();
+
+        let transcript_view: Element<'_, Message> = if transcript_lines.is_empty() {
+            text("Say something to begin...")
+                .size(18)
+                .color(dim_color)
+                .into()
+        } else {
+            scrollable(
+                column(transcript_lines)
+                    .spacing(8)
+                    .padding(10),
+            )
+            .height(150)
+            .into()
+        };
+
+        // Status indicator
+        let status = match &self.state {
+            State::Listening => "Listening...",
+            State::Processing => "Processing...",
+            State::Speaking { .. } => "Speaking...",
+            State::Done => "Done",
+            State::Idle => "",
+        };
+
+        let status_color = match &self.state {
+            State::Listening => color!(0xcc3e28), // Red for recording
+            _ => dim_color,
+        };
 
         let content = column![
-            container(circle).width(400).height(400),
-            container(subtitle).padding(20),
+            container(circle).width(300).height(300),
+            container(text(status).size(14).color(status_color)).padding(5),
+            container(transcript_view).width(500).padding(10),
         ]
+        .spacing(10)
         .align_x(iced::Alignment::Center);
 
         center(content).into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        time::every(milliseconds(16)).map(|_| Message::Tick)
+        Subscription::batch([
+            time::every(milliseconds(16)).map(|_| Message::Tick),
+            system::theme_changes().map(Message::ThemeChanged),
+        ])
     }
 
     fn theme(&self) -> Theme {
-        Theme::Dark
+        match self.theme_mode {
+            iced::theme::Mode::Light => theme::paper(),
+            iced::theme::Mode::Dark | iced::theme::Mode::None => theme::paper_dark(),
+        }
     }
 }
 
@@ -295,27 +400,34 @@ impl canvas::Program<Message> for App {
             let center = frame.center();
             let t = self.start.elapsed().as_secs_f32();
 
-            let pulse = match &self.state {
-                State::Speaking { .. } => 25.0 * (t * 5.0).sin().abs(),
-                State::Listening => 15.0 * (t * 3.0).sin().abs(),
-                State::Processing => 10.0 * (t * 8.0).sin().abs(),
-                State::Idle | State::Done => 5.0 * (t * 1.5).sin().abs(),
+            let (pulse, color) = match &self.state {
+                State::Speaking { .. } => (
+                    25.0 * (t * 5.0).sin().abs(),
+                    Color::from_rgb(0.2, 0.6, 1.0), // Blue
+                ),
+                State::Listening => {
+                    // Red with audio level response
+                    let audio_pulse = self.audio_level * 40.0;
+                    let base_pulse = 10.0 * (t * 2.0).sin().abs();
+                    (base_pulse + audio_pulse, Color::from_rgb(0.85, 0.2, 0.2))
+                }
+                State::Processing => (
+                    10.0 * (t * 8.0).sin().abs(),
+                    Color::from_rgb(1.0, 0.6, 0.2), // Orange
+                ),
+                State::Idle | State::Done => (
+                    5.0 * (t * 1.5).sin().abs(),
+                    Color::from_rgb(0.5, 0.5, 0.5), // Gray
+                ),
             };
 
-            let base_radius = 80.0;
+            let base_radius = 60.0;
             let radius = base_radius + pulse;
-
-            let color = match &self.state {
-                State::Speaking { .. } => Color::from_rgb(0.2, 0.6, 1.0),
-                State::Listening => Color::from_rgb(0.2, 0.8, 0.4),
-                State::Processing => Color::from_rgb(1.0, 0.6, 0.2),
-                State::Idle => Color::from_rgb(0.5, 0.5, 0.5),
-                State::Done => Color::from_rgb(0.6, 0.3, 0.8),
-            };
 
             let path = canvas::Path::circle(Point::new(center.x, center.y), radius);
             frame.fill(&path, color);
 
+            // Inner glow
             let inner_radius = radius * 0.6;
             let inner_color = Color {
                 a: 0.3,
