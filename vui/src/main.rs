@@ -29,6 +29,7 @@ fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
         .subscription(App::subscription)
         .theme(App::theme)
+        .title("root.vc • application system")
         .run()
 }
 
@@ -51,9 +52,9 @@ enum Message {
 #[derive(Debug, Clone)]
 enum State {
     Idle,
-    Speaking { text: String },
-    BargedIn,
-    Listening,
+    Speaking { text: String, barge_in_frames: usize },
+    BargedIn { has_speech: bool, silence_frames: usize },
+    Listening { has_speech: bool, silence_frames: usize },
     Processing { pending_text: Option<String> },
     Submitted,
     Done,
@@ -85,9 +86,6 @@ struct App {
     audio_buffer: Vec<f32>,
     audio_level: f32,
     playback_level: f32,
-    silence_frames: usize,
-    has_speech: bool,
-    barge_in_frames: usize,
     tts_paused: bool,
     theme_mode: iced::theme::Mode,
 }
@@ -133,9 +131,6 @@ impl App {
             audio_buffer: Vec::new(),
             audio_level: 0.0,
             playback_level: 0.0,
-            silence_frames: 0,
-            has_speech: false,
-            barge_in_frames: 0,
             tts_paused: false,
             theme_mode: iced::theme::Mode::Dark,
         };
@@ -197,97 +192,98 @@ impl App {
                 }
 
                 // Barge-in detection during Speaking
-                if matches!(self.state, State::Speaking { .. })
-                    && let Some(ref capture) = self.capture
-                {
-                    while let Some(samples) = capture.try_recv() {
-                        let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
-                            / samples.len() as f32)
-                            .sqrt();
+                // Barge-in detection during Speaking
+                if let State::Speaking { ref mut barge_in_frames, .. } = self.state {
+                    if let Some(ref capture) = self.capture {
+                        while let Some(samples) = capture.try_recv() {
+                            // Buffer samples so we capture speech that triggers barge-in
+                            self.audio_buffer.extend(&samples);
 
-                        if rms >= BARGE_IN_THRESHOLD {
-                            self.barge_in_frames += 1;
-                        } else {
-                            self.barge_in_frames = 0;
-                        }
+                            let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
+                                / samples.len() as f32)
+                                .sqrt();
 
-                        if self.barge_in_frames >= BARGE_IN_FRAMES {
-                            log::debug!("Barge-in detected, pausing TTS");
-                            if let Some(ref playback) = self.playback {
-                                playback.pause();
+                            if rms >= BARGE_IN_THRESHOLD {
+                                *barge_in_frames += 1;
+                            } else {
+                                *barge_in_frames = 0;
                             }
-                            self.tts_paused = true;
-                            self.state = State::BargedIn;
-                            self.audio_buffer.clear();
-                            self.has_speech = true;
-                            self.silence_frames = 0;
-                            self.barge_in_frames = 0;
-                            break;
+
+                            if *barge_in_frames >= BARGE_IN_FRAMES {
+                                log::debug!("Barge-in detected, pausing TTS");
+                                if let Some(ref playback) = self.playback {
+                                    playback.pause();
+                                }
+                                self.tts_paused = true;
+                                // Don't clear audio_buffer - it has the speech!
+                                self.state = State::BargedIn { has_speech: false, silence_frames: 0 };
+                                break;
+                            }
                         }
                     }
                 }
 
                 // Capture during BargedIn (same silence detection as Listening)
-                if matches!(self.state, State::BargedIn)
-                    && let Some(ref capture) = self.capture
-                {
-                    while let Some(samples) = capture.try_recv() {
-                        let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
-                            / samples.len() as f32)
-                            .sqrt();
+                if let State::BargedIn { ref mut has_speech, ref mut silence_frames } = self.state {
+                    if let Some(ref capture) = self.capture {
+                        while let Some(samples) = capture.try_recv() {
+                            let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
+                                / samples.len() as f32)
+                                .sqrt();
 
-                        let target_level = (rms * 10.0).min(1.0);
-                        self.audio_level = self.audio_level * 0.8 + target_level * 0.2;
+                            let target_level = (rms * 10.0).min(1.0);
+                            self.audio_level = self.audio_level * 0.8 + target_level * 0.2;
 
-                        if rms >= 0.01 {
-                            self.has_speech = true;
-                            self.silence_frames = 0;
-                        } else {
-                            self.silence_frames += 1;
-                        }
-
-                        self.audio_buffer.extend(samples);
-
-                        if self.audio_buffer.len() > 16000 && self.silence_frames > 150 {
-                            if self.has_speech {
-                                return Task::done(Message::StopListening);
+                            if rms >= 0.01 {
+                                *has_speech = true;
+                                *silence_frames = 0;
                             } else {
-                                return Task::done(Message::ResumePlayback);
+                                *silence_frames += 1;
+                            }
+
+                            self.audio_buffer.extend(samples);
+
+                            if self.audio_buffer.len() > 16000 && *silence_frames > 150 {
+                                if *has_speech {
+                                    return Task::done(Message::StopListening);
+                                } else {
+                                    return Task::done(Message::ResumePlayback);
+                                }
                             }
                         }
                     }
                 }
 
                 // Check for audio input while listening
-                if matches!(self.state, State::Listening)
-                    && let Some(ref capture) = self.capture
-                {
-                    while let Some(samples) = capture.try_recv() {
-                        let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
-                            / samples.len() as f32)
-                            .sqrt();
+                if let State::Listening { ref mut has_speech, ref mut silence_frames } = self.state {
+                    if let Some(ref capture) = self.capture {
+                        while let Some(samples) = capture.try_recv() {
+                            let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
+                                / samples.len() as f32)
+                                .sqrt();
 
-                        // Smooth audio level for visual display
-                        let target_level = (rms * 10.0).min(1.0);
-                        self.audio_level = self.audio_level * 0.8 + target_level * 0.2;
+                            // Smooth audio level for visual display
+                            let target_level = (rms * 10.0).min(1.0);
+                            self.audio_level = self.audio_level * 0.8 + target_level * 0.2;
 
-                        if rms >= 0.01 {
-                            self.has_speech = true;
-                            self.silence_frames = 0;
-                        } else {
-                            self.silence_frames += 1;
-                        }
-
-                        self.audio_buffer.extend(samples);
-
-                        // Stop after ~1.5 seconds of silence
-                        if self.audio_buffer.len() > 16000 && self.silence_frames > 150 {
-                            if self.has_speech {
-                                return Task::done(Message::StopListening);
+                            if rms >= 0.01 {
+                                *has_speech = true;
+                                *silence_frames = 0;
                             } else {
-                                // No speech detected, just reset and keep listening
-                                self.audio_buffer.clear();
-                                self.silence_frames = 0;
+                                *silence_frames += 1;
+                            }
+
+                            self.audio_buffer.extend(samples);
+
+                            // Stop after ~1.5 seconds of silence
+                            if self.audio_buffer.len() > 16000 && *silence_frames > 150 {
+                                if *has_speech {
+                                    return Task::done(Message::StopListening);
+                                } else {
+                                    // No speech detected, just reset and keep listening
+                                    self.audio_buffer.clear();
+                                    *silence_frames = 0;
+                                }
                             }
                         }
                     }
@@ -419,7 +415,7 @@ impl App {
                 let http = reqwest::Client::new();
                 Task::perform(
                     async move {
-                        http.post("https://hooks.attio.com/w/8b9f7dfe-0c44-4531-86e5-70f0ad1ec853/fffbdf49-989b-40bc-af97-fc602fd5bce9")
+                        http.post("https://hooks.attio.com/w/1d456d59-a7ac-4211-ac1d-fac612f7f491/5fc14931-0124-4121-b281-1dbfb64dceb2")
                             .json(&payload)
                             .send()
                             .await
@@ -461,13 +457,11 @@ impl App {
 
                     if let Some(ref playback) = self.playback {
                         playback.play(audio_data);
-                        // Don't start capture here — opening a CoreAudio input stream
-                        // causes the audio graph to reconfigure and glitches playback.
-                        // Capture is started lazily in the Tick handler after a short delay.
-                        self.barge_in_frames = 0;
+                        self.audio_buffer.clear();
                         self.tts_paused = false;
                         self.state = State::Speaking {
                             text: response_text.unwrap_or_default(),
+                            barge_in_frames: 0,
                         };
                     }
                     Task::none()
@@ -496,11 +490,9 @@ impl App {
             },
 
             Message::StartListening => {
-                self.state = State::Listening;
+                self.state = State::Listening { has_speech: false, silence_frames: 0 };
                 self.audio_buffer.clear();
                 self.audio_level = 0.0;
-                self.silence_frames = 0;
-                self.has_speech = false;
                 Task::none()
             }
 
@@ -530,11 +522,9 @@ impl App {
                     }
                     self.state = State::Speaking {
                         text: String::new(),
+                        barge_in_frames: 0,
                     };
                     self.audio_buffer.clear();
-                    self.barge_in_frames = 0;
-                    self.has_speech = false;
-                    self.silence_frames = 0;
                     Task::none()
                 } else {
                     // TTS finished while we were transcribing — nothing to resume
@@ -661,7 +651,7 @@ impl App {
 
         // Status indicator
         let status = match &self.state {
-            State::Listening | State::BargedIn => "Listening...",
+            State::Listening { .. } | State::BargedIn { .. } => "Listening...",
             State::Processing { .. } => "Processing...",
             State::Speaking { .. } => "Speaking...",
             State::Submitted => "Submitted",
@@ -670,7 +660,7 @@ impl App {
         };
 
         let status_color = match &self.state {
-            State::Listening | State::BargedIn => color!(0xcc3e28),
+            State::Listening { .. } | State::BargedIn { .. } => color!(0xcc3e28),
             _ => dim_color,
         };
 
@@ -772,8 +762,8 @@ impl canvas::Program<Message> for App {
                             Color::from_rgb(0.2, 0.6, 1.0),
                         )
                     }
-                    State::Listening => {
-                        if self.has_speech {
+                    State::Listening { has_speech, .. } => {
+                        if *has_speech {
                             // Reactive red circle
                             let audio_pulse = self.audio_level * 40.0;
                             let base_pulse = if self.audio_level > 0.05 {
@@ -791,7 +781,7 @@ impl canvas::Program<Message> for App {
                             (12.0, 0.0, Color::from_rgb(0.85, 0.2, 0.2))
                         }
                     }
-                    State::BargedIn => {
+                    State::BargedIn { .. } => {
                         let audio_pulse = self.audio_level * 40.0;
                         let base_pulse = if self.audio_level > 0.05 {
                             10.0 * (t * 2.0).sin().abs()
