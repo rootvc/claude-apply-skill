@@ -65,6 +65,7 @@ struct App {
     capture: Option<audio::Capture>,
     audio_buffer: Vec<f32>,
     audio_level: f32,
+    playback_level: f32,
     silence_frames: usize,
     theme_mode: iced::theme::Mode,
 }
@@ -107,6 +108,7 @@ impl App {
             capture: None,
             audio_buffer: Vec::new(),
             audio_level: 0.0,
+            playback_level: 0.0,
             silence_frames: 0,
             theme_mode: iced::theme::Mode::Dark,
         };
@@ -124,19 +126,25 @@ impl App {
             Message::Tick => {
                 self.cache.clear();
 
-                // Check playback status
-                if let Some(ref playback) = self.playback
-                    && let Some(status) = playback.try_recv_status()
-                {
-                    match status {
-                        audio::playback::Status::Finished => {
-                            return Task::done(Message::TtsFinished);
+                // Check playback status (drain all pending messages)
+                if let Some(ref playback) = self.playback {
+                    while let Some(status) = playback.try_recv_status() {
+                        match status {
+                            audio::playback::Status::Finished => {
+                                self.playback_level = 0.0;
+                                return Task::done(Message::TtsFinished);
+                            }
+                            audio::playback::Status::Error(e) => {
+                                eprintln!("Playback error: {}", e);
+                                self.playback_level = 0.0;
+                                return Task::done(Message::TtsFinished);
+                            }
+                            audio::playback::Status::Level(level) => {
+                                let target = (level * 5.0).min(1.0);
+                                self.playback_level = self.playback_level * 0.7 + target * 0.3;
+                            }
+                            _ => {}
                         }
-                        audio::playback::Status::Error(e) => {
-                            eprintln!("Playback error: {}", e);
-                            return Task::done(Message::TtsFinished);
-                        }
-                        _ => {}
                     }
                 }
 
@@ -271,7 +279,20 @@ impl App {
 
             Message::TranscriptionReady(result) => match result {
                 Ok(transcript) => {
+                    let transcript = transcript.trim().to_string();
                     eprintln!("User said: {}", transcript);
+
+                    // Filter out noise/static
+                    let is_noise = transcript.is_empty()
+                        || transcript.len() < 3
+                        || transcript.starts_with('(')
+                        || transcript.to_lowercase().contains("static");
+
+                    if is_noise {
+                        eprintln!("Filtered noise: {:?}", transcript);
+                        return Task::done(Message::StartListening);
+                    }
+
                     self.messages.push(ChatMessage::user(&transcript));
                     self.transcript.push(Line {
                         role: Role::User,
@@ -401,14 +422,24 @@ impl canvas::Program<Message> for App {
             let t = self.start.elapsed().as_secs_f32();
 
             let (pulse, color) = match &self.state {
-                State::Speaking { .. } => (
-                    25.0 * (t * 5.0).sin().abs(),
-                    Color::from_rgb(0.2, 0.6, 1.0), // Blue
-                ),
+                State::Speaking { .. } => {
+                    // Blue circle reacts to actual playback volume
+                    let audio_pulse = self.playback_level * 40.0;
+                    let base_pulse = if self.playback_level > 0.05 {
+                        10.0 * (t * 4.0).sin().abs()
+                    } else {
+                        0.0
+                    };
+                    (base_pulse + audio_pulse, Color::from_rgb(0.2, 0.6, 1.0))
+                }
                 State::Listening => {
-                    // Red with audio level response
+                    // Red, still when silent, pulses with voice
                     let audio_pulse = self.audio_level * 40.0;
-                    let base_pulse = 10.0 * (t * 2.0).sin().abs();
+                    let base_pulse = if self.audio_level > 0.05 {
+                        10.0 * (t * 2.0).sin().abs()
+                    } else {
+                        0.0
+                    };
                     (base_pulse + audio_pulse, Color::from_rgb(0.85, 0.2, 0.2))
                 }
                 State::Processing => (
