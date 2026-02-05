@@ -91,6 +91,17 @@ impl Form {
         }
     }
 
+    /// Returns the form data as JSON for the webhook POST
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "name": self.name,
+            "email": self.email,
+            "linkedin": self.linkedin,
+            "github": self.github,
+            "notes": self.notes
+        })
+    }
+
     /// Returns the tool definition JSON for the Claude API request
     pub fn tool_definition() -> serde_json::Value {
         serde_json::json!({
@@ -155,6 +166,44 @@ impl Form {
         );
 
         container(stack![bottom_right(submit).padding(16), fields])
+            .style(theme::sidebar)
+            .width(Fill)
+            .height(Fill)
+            .into()
+    }
+
+    /// Render the form as submitted (read-only, no submit button)
+    pub fn view_submitted<'a, Message: Clone + 'a>(&self) -> Element<'a, Message> {
+        let dim = iced::Color::from_rgb(0.5, 0.5, 0.5);
+        let green = iced::Color::from_rgb(0.2, 0.65, 0.3);
+
+        let field = |label: &'static str, value: String| -> Element<'a, Message> {
+            column![
+                text(label).size(12).color(dim),
+                if value.is_empty() {
+                    text("—").size(16)
+                } else {
+                    text(value).size(16)
+                },
+            ]
+            .spacing(2)
+            .into()
+        };
+
+        let fields = scrollable(
+            column![
+                text("Application Submitted").size(20).color(green),
+                field("Name", self.name.clone()),
+                field("Email", self.email.clone()),
+                field("LinkedIn", self.linkedin.clone()),
+                field("GitHub", self.github.clone()),
+                field("Notes", self.notes.clone()),
+            ]
+            .spacing(12)
+            .padding(16),
+        );
+
+        container(fields)
             .style(theme::sidebar)
             .width(Fill)
             .height(Fill)

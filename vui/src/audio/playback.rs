@@ -11,10 +11,11 @@ pub struct Playback {
     status_receiver: mpsc::Receiver<Status>,
 }
 
-#[allow(dead_code)]
 enum Command {
     Play(Vec<u8>),
     Stop,
+    Pause,
+    Resume,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,7 @@ pub enum Status {
     Playing,
     Level(f32),
     Finished,
+    Paused,
     Error(String),
 }
 
@@ -106,17 +108,37 @@ impl Playback {
                                 let level = Arc::new(AtomicU32::new(0));
                                 let level_clone = level.clone();
 
-                                // Convert to f32 and wrap with level tracker
                                 let f32_source = source.convert_samples::<f32>();
                                 let tracked_source = Level::new(f32_source, level);
 
                                 sink.append(tracked_source);
 
-                                // Poll level while playing
+                                // Poll level while playing, also check for commands
                                 while !sink.empty() {
+                                    match receiver.try_recv() {
+                                        Ok(Command::Pause) => {
+                                            sink.pause();
+                                            let _ = status_sender.send(Status::Paused);
+                                        }
+                                        Ok(Command::Resume) => {
+                                            sink.play();
+                                        }
+                                        Ok(Command::Stop) => {
+                                            sink.stop();
+                                        }
+                                        Ok(Command::Play(_)) => {}
+                                        Err(_) => {}
+                                    }
+
+                                    if sink.empty() {
+                                        break;
+                                    }
+
                                     let bits = level_clone.load(Ordering::Relaxed);
                                     let rms = f32::from_bits(bits);
-                                    let _ = status_sender.send(Status::Level(rms));
+                                    let _ = status_sender.send(Status::Level(
+                                        if sink.is_paused() { 0.0 } else { rms },
+                                    ));
                                     thread::sleep(Duration::from_millis(16));
                                 }
 
@@ -131,6 +153,8 @@ impl Playback {
                     Command::Stop => {
                         sink.stop();
                     }
+                    Command::Pause => {}
+                    Command::Resume => {}
                 }
             }
         });
@@ -145,9 +169,16 @@ impl Playback {
         let _ = self.sender.send(Command::Play(audio_data));
     }
 
-    #[allow(dead_code)]
     pub fn stop(&self) {
         let _ = self.sender.send(Command::Stop);
+    }
+
+    pub fn pause(&self) {
+        let _ = self.sender.send(Command::Pause);
+    }
+
+    pub fn resume(&self) {
+        let _ = self.sender.send(Command::Resume);
     }
 
     pub fn try_recv_status(&self) -> Option<Status> {

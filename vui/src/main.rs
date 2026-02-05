@@ -14,6 +14,14 @@ use iced::{
 use std::sync::Arc;
 use std::time::Instant;
 
+/// RMS threshold for barge-in detection during TTS playback.
+/// 5x normal speech threshold (0.01) to avoid TTS echo triggering false barge-ins.
+const BARGE_IN_THRESHOLD: f32 = 0.05;
+
+/// Consecutive audio chunks above threshold required to trigger barge-in.
+/// ~5 chunks ≈ 80-160ms of sustained loud speech.
+const BARGE_IN_FRAMES: usize = 5;
+
 fn main() -> iced::Result {
     dotenvy::dotenv().ok();
     env_logger::init();
@@ -32,8 +40,10 @@ enum Message {
     TranscriptionReady(Result<String, String>),
     ClaudeReady(Result<claude::SendResult, String>),
     SubmitForm,
+    SubmitResult(Result<String, String>),
     StartListening,
     StopListening,
+    ResumePlayback,
     ThemeChanged(iced::theme::Mode),
 }
 
@@ -42,8 +52,10 @@ enum Message {
 enum State {
     Idle,
     Speaking { text: String },
+    BargedIn,
     Listening,
     Processing { pending_text: Option<String> },
+    Submitted,
     Done,
 }
 
@@ -75,6 +87,8 @@ struct App {
     playback_level: f32,
     silence_frames: usize,
     has_speech: bool,
+    barge_in_frames: usize,
+    tts_paused: bool,
     theme_mode: iced::theme::Mode,
 }
 
@@ -103,6 +117,7 @@ impl App {
         };
 
         let playback = audio::Playback::new().ok();
+        let capture = audio::Capture::new().ok();
 
         let app = Self {
             state: State::Idle,
@@ -114,12 +129,14 @@ impl App {
             elevenlabs,
             chat,
             playback,
-            capture: None,
+            capture,
             audio_buffer: Vec::new(),
             audio_level: 0.0,
             playback_level: 0.0,
             silence_frames: 0,
             has_speech: false,
+            barge_in_frames: 0,
+            tts_paused: false,
             theme_mode: iced::theme::Mode::Dark,
         };
 
@@ -142,18 +159,88 @@ impl App {
                         match status {
                             audio::playback::Status::Finished => {
                                 self.playback_level = 0.0;
-                                return Task::done(Message::TtsFinished);
+                                if matches!(self.state, State::Speaking { .. }) {
+                                    return Task::done(Message::TtsFinished);
+                                }
+                                // TTS ended during barge-in flow — mark not resumable
+                                self.tts_paused = false;
                             }
                             audio::playback::Status::Error(e) => {
                                 log::error!("Playback error: {}", e);
                                 self.playback_level = 0.0;
+                                self.tts_paused = false;
                                 return Task::done(Message::TtsFinished);
                             }
                             audio::playback::Status::Level(level) => {
                                 let target = (level * 5.0).min(1.0);
                                 self.playback_level = self.playback_level * 0.7 + target * 0.3;
                             }
+                            audio::playback::Status::Paused => {
+                                self.playback_level = 0.0;
+                            }
                             _ => {}
+                        }
+                    }
+                }
+
+                // Barge-in detection during Speaking
+                if matches!(self.state, State::Speaking { .. })
+                    && let Some(ref capture) = self.capture
+                {
+                    while let Some(samples) = capture.try_recv() {
+                        let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
+                            / samples.len() as f32)
+                            .sqrt();
+
+                        if rms >= BARGE_IN_THRESHOLD {
+                            self.barge_in_frames += 1;
+                        } else {
+                            self.barge_in_frames = 0;
+                        }
+
+                        if self.barge_in_frames >= BARGE_IN_FRAMES {
+                            log::debug!("Barge-in detected, pausing TTS");
+                            if let Some(ref playback) = self.playback {
+                                playback.pause();
+                            }
+                            self.tts_paused = true;
+                            self.state = State::BargedIn;
+                            self.audio_buffer.clear();
+                            self.has_speech = true;
+                            self.silence_frames = 0;
+                            self.barge_in_frames = 0;
+                            break;
+                        }
+                    }
+                }
+
+                // Capture during BargedIn (same silence detection as Listening)
+                if matches!(self.state, State::BargedIn)
+                    && let Some(ref capture) = self.capture
+                {
+                    while let Some(samples) = capture.try_recv() {
+                        let rms: f32 = (samples.iter().map(|s| s * s).sum::<f32>()
+                            / samples.len() as f32)
+                            .sqrt();
+
+                        let target_level = (rms * 10.0).min(1.0);
+                        self.audio_level = self.audio_level * 0.8 + target_level * 0.2;
+
+                        if rms >= 0.01 {
+                            self.has_speech = true;
+                            self.silence_frames = 0;
+                        } else {
+                            self.silence_frames += 1;
+                        }
+
+                        self.audio_buffer.extend(samples);
+
+                        if self.audio_buffer.len() > 16000 && self.silence_frames > 90 {
+                            if self.has_speech {
+                                return Task::done(Message::StopListening);
+                            } else {
+                                return Task::done(Message::ResumePlayback);
+                            }
                         }
                     }
                 }
@@ -313,7 +400,30 @@ impl App {
 
             Message::SubmitForm => {
                 log::info!("Form submitted: {:?}", self.form);
-                self.state = State::Done;
+                println!("\n=== APPLICATION SUBMITTED ===\n{}\n", serde_json::to_string_pretty(&self.form.to_json()).unwrap());
+                self.state = State::Submitted;
+                let payload = self.form.to_json();
+                let http = reqwest::Client::new();
+                Task::perform(
+                    async move {
+                        http.post("https://hooks.attio.com/w/8b9f7dfe-0c44-4531-86e5-70f0ad1ec853/fffbdf49-989b-40bc-af97-fc602fd5bce9")
+                            .json(&payload)
+                            .send()
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .text()
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::SubmitResult,
+                )
+            }
+
+            Message::SubmitResult(result) => {
+                match &result {
+                    Ok(body) => log::info!("Submitted to Attio: {}", body),
+                    Err(e) => log::error!("Attio webhook error: {}", e),
+                }
                 Task::none()
             }
 
@@ -338,6 +448,11 @@ impl App {
 
                     if let Some(ref playback) = self.playback {
                         playback.play(audio_data);
+                        // Don't start capture here — opening a CoreAudio input stream
+                        // causes the audio graph to reconfigure and glitches playback.
+                        // Capture is started lazily in the Tick handler after a short delay.
+                        self.barge_in_frames = 0;
+                        self.tts_paused = false;
                         self.state = State::Speaking {
                             text: response_text.unwrap_or_default(),
                         };
@@ -362,13 +477,10 @@ impl App {
                 }
             },
 
-            Message::TtsFinished => {
-                if matches!(self.state, State::Done) {
-                    Task::none()
-                } else {
-                    Task::done(Message::StartListening)
-                }
-            }
+            Message::TtsFinished => match self.state {
+                State::Speaking { .. } => Task::done(Message::StartListening),
+                _ => Task::none(),
+            },
 
             Message::StartListening => {
                 self.state = State::Listening;
@@ -376,12 +488,10 @@ impl App {
                 self.audio_level = 0.0;
                 self.silence_frames = 0;
                 self.has_speech = false;
-                self.capture = audio::Capture::new().ok();
                 Task::none()
             }
 
             Message::StopListening => {
-                self.capture = None;
                 self.state = State::Processing { pending_text: None };
                 self.audio_level = 0.0;
 
@@ -399,6 +509,26 @@ impl App {
                 }
             }
 
+            Message::ResumePlayback => {
+                if self.tts_paused {
+                    log::debug!("Resuming TTS after noise barge-in");
+                    if let Some(ref playback) = self.playback {
+                        playback.resume();
+                    }
+                    self.state = State::Speaking {
+                        text: String::new(),
+                    };
+                    self.audio_buffer.clear();
+                    self.barge_in_frames = 0;
+                    self.has_speech = false;
+                    self.silence_frames = 0;
+                    Task::none()
+                } else {
+                    // TTS finished while we were transcribing — nothing to resume
+                    Task::done(Message::StartListening)
+                }
+            }
+
             Message::TranscriptionReady(result) => match result {
                 Ok(transcript) => {
                     let transcript = transcript.trim().to_string();
@@ -412,7 +542,18 @@ impl App {
 
                     if is_noise {
                         log::debug!("Filtered noise: {:?}", transcript);
+                        if self.tts_paused {
+                            return Task::done(Message::ResumePlayback);
+                        }
                         return Task::done(Message::StartListening);
+                    }
+
+                    // Real speech — if we barged in, stop TTS permanently
+                    if self.tts_paused {
+                        if let Some(ref playback) = self.playback {
+                            playback.stop();
+                        }
+                        self.tts_paused = false;
                     }
 
                     self.messages.push(claude::Message::user(&transcript));
@@ -435,6 +576,9 @@ impl App {
                 }
                 Err(e) => {
                     log::debug!("Transcription error: {}", e);
+                    if self.tts_paused {
+                        return Task::done(Message::ResumePlayback);
+                    }
                     self.transcript.push(Line {
                         role: Role::Assistant,
                         text: format!("Error: {}", e),
@@ -497,15 +641,16 @@ impl App {
 
         // Status indicator
         let status = match &self.state {
-            State::Listening => "Listening...",
+            State::Listening | State::BargedIn => "Listening...",
             State::Processing { .. } => "Processing...",
             State::Speaking { .. } => "Speaking...",
+            State::Submitted => "Submitted",
             State::Done => "Done",
             State::Idle => "",
         };
 
         let status_color = match &self.state {
-            State::Listening => color!(0xcc3e28), // Red for recording
+            State::Listening | State::BargedIn => color!(0xcc3e28),
             _ => dim_color,
         };
 
@@ -526,19 +671,14 @@ impl App {
         ]
         .width(Fill);
 
-        // let sidebar = (!self.form.is_empty()).then(|| {
-        //     self.form.view(if self.form.is_ready() {
-        //         Some(Message::SubmitForm)
-        //     } else {
-        //         None
-        //     })
-        // });
-
-        let Some(sidebar) = (!self.form.is_empty()).then(|| {
+        let sidebar = if matches!(self.state, State::Submitted) {
+            self.form.view_submitted()
+        } else {
+            if self.form.is_empty() {
+                return voice_area.into();
+            }
             self.form
                 .view(self.form.is_ready().then(|| Message::SubmitForm))
-        }) else {
-            return voice_area.into();
         };
 
         stack![
@@ -631,6 +771,24 @@ impl canvas::Program<Message> for App {
                             (12.0, 0.0, Color::from_rgb(0.85, 0.2, 0.2))
                         }
                     }
+                    State::BargedIn => {
+                        let audio_pulse = self.audio_level * 40.0;
+                        let base_pulse = if self.audio_level > 0.05 {
+                            10.0 * (t * 2.0).sin().abs()
+                        } else {
+                            0.0
+                        };
+                        (
+                            60.0,
+                            base_pulse + audio_pulse,
+                            Color::from_rgb(0.85, 0.2, 0.2),
+                        )
+                    }
+                    State::Submitted => (
+                        60.0,
+                        3.0 * (t * 1.0).sin().abs(),
+                        Color::from_rgb(0.2, 0.65, 0.3),
+                    ),
                     State::Idle | State::Done => (
                         60.0,
                         5.0 * (t * 1.5).sin().abs(),
