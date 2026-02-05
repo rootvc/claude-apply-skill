@@ -3,8 +3,11 @@ mod audio;
 mod theme;
 
 use api::claude;
+use iced::Length::FillPortion;
 use iced::time::{self, milliseconds};
-use iced::widget::{bottom, canvas, center, column, container, scrollable, stack, text};
+use iced::widget::{
+    bottom, canvas, center, column, container, responsive, row, scrollable, space, stack, text,
+};
 use iced::{
     Center, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme, color,
     mouse, padding, system,
@@ -416,15 +419,25 @@ impl App {
             bottom(text("Say something to begin...").size(18).color(dim_color)).center_x(Fill)
         } else {
             bottom(
-                scrollable(column(transcript_lines).spacing(8).padding(10))
-                    .spacing(0)
-                    .direction(scrollable::Direction::Vertical(
-                        scrollable::Scrollbar::new()
-                            .width(1)
-                            .margin(1)
-                            .scroller_width(3),
-                    ))
-                    .anchor_bottom(),
+                scrollable(
+                    row![
+                        space().width(FillPortion(1)),
+                        column(transcript_lines)
+                            .spacing(8)
+                            .padding(10)
+                            .width(FillPortion(4)),
+                        space().width(FillPortion(1)),
+                    ]
+                    .width(Fill),
+                )
+                .spacing(0)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::new()
+                        .width(1)
+                        .margin(1)
+                        .scroller_width(3),
+                ))
+                .anchor_bottom(),
             )
         };
 
@@ -451,9 +464,10 @@ impl App {
                 .padding(padding::bottom(300))
                 .spacing(10)
                 .align_x(Center)
+                .width(Fill)
             )
             .center_y(Fill),
-            bottom(transcript_view).width(600).padding(10),
+            bottom(transcript_view).width(Fill).padding(10),
         ];
 
         center(content).into()
@@ -489,51 +503,81 @@ impl canvas::Program<Message> for App {
             let center = frame.center();
             let t = self.start.elapsed().as_secs_f32();
 
-            let (pulse, color) = match &self.state {
-                State::Speaking { .. } => {
-                    // Blue circle reacts to actual playback volume
-                    let audio_pulse = self.playback_level * 40.0;
-                    let base_pulse = if self.playback_level > 0.05 {
-                        10.0 * (t * 4.0).sin().abs()
-                    } else {
-                        0.0
-                    };
-                    (base_pulse + audio_pulse, Color::from_rgb(0.2, 0.6, 1.0))
-                }
-                State::Listening => {
-                    // Red, still when silent, pulses with voice
-                    let audio_pulse = self.audio_level * 40.0;
-                    let base_pulse = if self.audio_level > 0.05 {
-                        10.0 * (t * 2.0).sin().abs()
-                    } else {
-                        0.0
-                    };
-                    (base_pulse + audio_pulse, Color::from_rgb(0.85, 0.2, 0.2))
-                }
-                State::Processing { .. } => (
-                    10.0 * (t * 8.0).sin().abs(),
-                    Color::from_rgb(1.0, 0.6, 0.2), // Orange
-                ),
-                State::Idle | State::Done => (
-                    5.0 * (t * 1.5).sin().abs(),
-                    Color::from_rgb(0.5, 0.5, 0.5), // Gray
-                ),
-            };
+            // Processing draws a spinning arc instead of a filled circle
+            if matches!(&self.state, State::Processing { .. }) {
+                let radius = 40.0;
+                let sweep = std::f32::consts::FRAC_PI_2; // 90° arc
+                let start_angle = t * 4.0;
+                let arc = canvas::path::Arc {
+                    center: Point::new(center.x, center.y),
+                    radius,
+                    start_angle: iced::Radians(start_angle),
+                    end_angle: iced::Radians(start_angle + sweep),
+                };
+                let path = canvas::Path::new(|b| b.arc(arc));
+                frame.stroke(
+                    &path,
+                    canvas::Stroke::default()
+                        .with_color(Color::from_rgb(1.0, 0.6, 0.2))
+                        .with_width(4.0),
+                );
+            } else {
+                let (base_radius, pulse, color) = match &self.state {
+                    State::Speaking { .. } => {
+                        // Blue circle reacts to actual playback volume
+                        let audio_pulse = self.playback_level * 40.0;
+                        let base_pulse = if self.playback_level > 0.05 {
+                            10.0 * (t * 4.0).sin().abs()
+                        } else {
+                            0.0
+                        };
+                        (
+                            60.0,
+                            base_pulse + audio_pulse,
+                            Color::from_rgb(0.2, 0.6, 1.0),
+                        )
+                    }
+                    State::Listening => {
+                        if self.has_speech {
+                            // Reactive red circle
+                            let audio_pulse = self.audio_level * 40.0;
+                            let base_pulse = if self.audio_level > 0.05 {
+                                10.0 * (t * 2.0).sin().abs()
+                            } else {
+                                0.0
+                            };
+                            (
+                                60.0,
+                                base_pulse + audio_pulse,
+                                Color::from_rgb(0.85, 0.2, 0.2),
+                            )
+                        } else {
+                            // Small idle dot
+                            (12.0, 0.0, Color::from_rgb(0.85, 0.2, 0.2))
+                        }
+                    }
+                    State::Idle | State::Done => (
+                        60.0,
+                        5.0 * (t * 1.5).sin().abs(),
+                        Color::from_rgb(0.5, 0.5, 0.5),
+                    ),
+                    State::Processing { .. } => unreachable!(),
+                };
 
-            let base_radius = 60.0;
-            let radius = base_radius + pulse;
+                let radius = base_radius + pulse;
 
-            let path = canvas::Path::circle(Point::new(center.x, center.y), radius);
-            frame.fill(&path, color);
+                let path = canvas::Path::circle(Point::new(center.x, center.y), radius);
+                frame.fill(&path, color);
 
-            // Inner glow
-            let inner_radius = radius * 0.6;
-            let inner_color = Color {
-                a: 0.3,
-                ..Color::WHITE
-            };
-            let inner_path = canvas::Path::circle(Point::new(center.x, center.y), inner_radius);
-            frame.fill(&inner_path, inner_color);
+                // Inner glow
+                let inner_radius = radius * 0.6;
+                let inner_color = Color {
+                    a: 0.3,
+                    ..Color::WHITE
+                };
+                let inner_path = canvas::Path::circle(Point::new(center.x, center.y), inner_radius);
+                frame.fill(&inner_path, inner_color);
+            }
         });
 
         vec![circle]
