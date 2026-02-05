@@ -1,6 +1,6 @@
 use iced::theme::{Custom, Palette};
 use iced::widget::container;
-use iced::{Color, Theme, border, color, gradient};
+use iced::{Border, Color, Theme, border, color, gradient};
 use std::sync::Arc;
 
 pub fn paper() -> Theme {
@@ -47,6 +47,19 @@ pub fn assistant(theme: &Theme) -> container::Style {
         background: Some(palette.background.weak.color.into()),
         text_color: Some(palette.background.weak.text),
         border: border::rounded(12),
+        ..container::Style::default()
+    }
+}
+
+pub fn sidebar(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(palette.background.weak.color.into()),
+        border: Border {
+            color: palette.background.strong.color,
+            width: 1.0,
+            radius: 0.0.into(),
+        },
         ..container::Style::default()
     }
 }

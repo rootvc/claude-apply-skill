@@ -1,12 +1,13 @@
 mod api;
 mod audio;
+mod form;
 mod theme;
 
 use api::claude;
 use iced::Length::FillPortion;
 use iced::time::{self, milliseconds};
 use iced::widget::{
-    bottom, canvas, center, column, container, right, row, scrollable, space, stack, text,
+    bottom, canvas, column, container, right, row, scrollable, space, stack, text,
 };
 use iced::{
     Center, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme, color,
@@ -31,7 +32,8 @@ enum Message {
     TtsReady(Result<Vec<u8>, String>),
     TtsFinished,
     TranscriptionReady(Result<String, String>),
-    ClaudeReady(Result<String, String>),
+    ClaudeReady(Result<claude::SendResult, String>),
+    SubmitForm,
     StartListening,
     StopListening,
     ThemeChanged(iced::theme::Mode),
@@ -65,6 +67,7 @@ struct App {
     cache: canvas::Cache,
     messages: Vec<claude::Message>,
     transcript: Vec<Line>,
+    form: form::Form,
     elevenlabs: Option<Arc<api::elevenlabs::Client>>,
     chat: Option<Arc<api::claude::Client>>,
     playback: Option<audio::Playback>,
@@ -109,6 +112,7 @@ impl App {
             cache: canvas::Cache::default(),
             messages: Vec::new(),
             transcript: Vec::new(),
+            form: form::Form::default(),
             elevenlabs,
             chat,
             playback,
@@ -200,28 +204,84 @@ impl App {
             }
 
             Message::ClaudeReady(result) => match result {
-                Ok(response) => {
-                    let is_complete = response.contains("APPLICATION_COMPLETE");
-                    let display_text = response
-                        .replace("APPLICATION_COMPLETE", "")
-                        .trim()
-                        .to_string();
-
-                    self.messages
-                        .push(claude::Message::assistant(&display_text));
-
-                    if is_complete {
-                        // Show text immediately when done since there's no next interaction
-                        self.transcript.push(Line {
-                            role: Role::Assistant,
-                            text: display_text.clone(),
+                Ok(result) => {
+                    // Build the assistant content blocks for message history
+                    let mut blocks = Vec::new();
+                    if !result.text.is_empty() {
+                        blocks.push(claude::ContentBlock::Text {
+                            text: result.text.clone(),
                         });
-                        self.state = State::Done;
-                    } else {
-                        self.state = State::Processing {
-                            pending_text: Some(display_text.clone()),
-                        };
                     }
+                    for tu in &result.tool_uses {
+                        blocks.push(claude::ContentBlock::ToolUse {
+                            id: tu.id.clone(),
+                            name: tu.name.clone(),
+                            input: tu.input.clone(),
+                        });
+                    }
+                    if !blocks.is_empty() {
+                        self.messages.push(claude::Message::assistant_blocks(blocks));
+                    }
+
+                    // Process tool uses if stop_reason is "tool_use"
+                    if result.stop_reason == "tool_use" && !result.tool_uses.is_empty() {
+                        let mut submit_requested = false;
+                        for tu in &result.tool_uses {
+                            if tu.name == "update_form" {
+                                if let Ok(tool_input) =
+                                    serde_json::from_value::<form::ToolInput>(tu.input.clone())
+                                {
+                                    let tool_result = self.form.apply(&tool_input);
+                                    if tool_input.action == "submit" && self.form.is_ready() {
+                                        submit_requested = true;
+                                    }
+                                    self.messages.push(claude::Message::tool_result(
+                                        &tu.id,
+                                        &tool_result,
+                                    ));
+                                } else {
+                                    self.messages.push(claude::Message::tool_result(
+                                        &tu.id,
+                                        "Error: invalid tool input",
+                                    ));
+                                }
+                            }
+                        }
+
+                        if submit_requested {
+                            self.state = State::Done;
+                            if !result.text.is_empty() {
+                                self.transcript.push(Line {
+                                    role: Role::Assistant,
+                                    text: result.text.clone(),
+                                });
+                            }
+                            return Task::done(Message::SubmitForm);
+                        }
+
+                        // Re-send to Claude to continue the conversation
+                        if let Some(chat) = &self.chat {
+                            let chat = chat.clone();
+                            let messages = self.messages.clone();
+                            let tools = vec![form::Form::tool_definition()];
+                            return Task::perform(
+                                async move { chat.send(&messages, &tools).await },
+                                Message::ClaudeReady,
+                            );
+                        }
+                        return Task::none();
+                    }
+
+                    // Normal end_turn — display text and TTS
+                    let display_text = result.text.clone();
+
+                    if display_text.is_empty() {
+                        return Task::done(Message::StartListening);
+                    }
+
+                    self.state = State::Processing {
+                        pending_text: Some(display_text.clone()),
+                    };
 
                     if let Some(tts) = &self.elevenlabs {
                         let tts = tts.clone();
@@ -230,11 +290,9 @@ impl App {
                             Message::TtsReady,
                         )
                     } else {
-                        // No TTS — show text immediately as fallback
-                        if !is_complete
-                            && let State::Processing {
-                                ref mut pending_text,
-                            } = self.state
+                        if let State::Processing {
+                            ref mut pending_text,
+                        } = self.state
                             && let Some(text) = pending_text.take()
                         {
                             self.transcript.push(Line {
@@ -242,7 +300,7 @@ impl App {
                                 text,
                             });
                         }
-                        Task::none()
+                        Task::done(Message::StartListening)
                     }
                 }
                 Err(e) => {
@@ -255,6 +313,12 @@ impl App {
                     Task::none()
                 }
             },
+
+            Message::SubmitForm => {
+                log::info!("Form submitted: {:?}", self.form);
+                self.state = State::Done;
+                Task::none()
+            }
 
             Message::TtsReady(result) => match result {
                 Ok(audio_data) => {
@@ -363,8 +427,9 @@ impl App {
                     if let Some(chat) = &self.chat {
                         let chat = chat.clone();
                         let messages = self.messages.clone();
+                        let tools = vec![form::Form::tool_definition()];
                         Task::perform(
-                            async move { chat.send(&messages).await },
+                            async move { chat.send(&messages, &tools).await },
                             Message::ClaudeReady,
                         )
                     } else {
@@ -396,7 +461,7 @@ impl App {
             .transcript
             .iter()
             .map(|line| {
-                let bubble = container(text(&line.text).size(18))
+                let bubble = container(text(&line.text).size(16))
                     .padding(padding::all(10).left(14).right(14))
                     .max_width(500);
 
@@ -408,7 +473,7 @@ impl App {
             .collect();
 
         let transcript_view = if transcript_lines.is_empty() {
-            bottom(text("Say something to begin...").size(18).color(dim_color)).center_x(Fill)
+            bottom(text("Say something to begin...").size(16).color(dim_color)).center_x(Fill)
         } else {
             bottom(
                 scrollable(
@@ -447,7 +512,7 @@ impl App {
             _ => dim_color,
         };
 
-        let content = stack![
+        let voice_area = stack![
             bottom(transcript_view).width(Fill).padding(10),
             container(
                 column![
@@ -461,9 +526,18 @@ impl App {
             )
             .center_y(Fill)
             .style(theme::fade),
-        ];
+        ]
+        .width(Fill);
 
-        center(content).into()
+        let sidebar = self.form.view(
+            if self.form.is_ready() {
+                Some(Message::SubmitForm)
+            } else {
+                None
+            },
+        );
+
+        row![voice_area, sidebar].into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
