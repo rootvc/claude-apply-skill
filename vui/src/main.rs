@@ -2,16 +2,19 @@ mod api;
 mod audio;
 mod theme;
 
-use api::claude::Message as ChatMessage;
-use iced::mouse;
+use api::claude;
 use iced::time::{self, milliseconds};
-use iced::widget::{canvas, center, column, container, scrollable, text};
-use iced::{color, system, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme};
+use iced::widget::{bottom, canvas, center, column, container, scrollable, stack, text};
+use iced::{
+    Center, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme, color,
+    mouse, padding, system,
+};
 use std::sync::Arc;
 use std::time::Instant;
 
 fn main() -> iced::Result {
     dotenvy::dotenv().ok();
+    env_logger::init();
 
     iced::application(App::new, App::update, App::view)
         .subscription(App::subscription)
@@ -37,7 +40,7 @@ enum State {
     Idle,
     Speaking { text: String },
     Listening,
-    Processing,
+    Processing { pending_text: Option<String> },
     Done,
 }
 
@@ -57,7 +60,7 @@ struct App {
     state: State,
     start: Instant,
     cache: canvas::Cache,
-    messages: Vec<ChatMessage>,
+    messages: Vec<claude::Message>,
     transcript: Vec<Line>,
     elevenlabs: Option<Arc<api::elevenlabs::Client>>,
     chat: Option<Arc<api::claude::Client>>,
@@ -67,6 +70,7 @@ struct App {
     audio_level: f32,
     playback_level: f32,
     silence_frames: usize,
+    has_speech: bool,
     theme_mode: iced::theme::Mode,
 }
 
@@ -76,10 +80,10 @@ impl App {
         let anthropic_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
 
         if elevenlabs_key.is_empty() {
-            eprintln!("WARNING: ELEVENLABS_API_KEY not set");
+            log::error!("WARNING: ELEVENLABS_API_KEY not set");
         }
         if anthropic_key.is_empty() {
-            eprintln!("WARNING: ANTHROPIC_API_KEY not set");
+            log::error!("WARNING: ANTHROPIC_API_KEY not set");
         }
 
         let elevenlabs = if !elevenlabs_key.is_empty() {
@@ -110,6 +114,7 @@ impl App {
             audio_level: 0.0,
             playback_level: 0.0,
             silence_frames: 0,
+            has_speech: false,
             theme_mode: iced::theme::Mode::Dark,
         };
 
@@ -135,7 +140,7 @@ impl App {
                                 return Task::done(Message::TtsFinished);
                             }
                             audio::playback::Status::Error(e) => {
-                                eprintln!("Playback error: {}", e);
+                                log::error!("Playback error: {}", e);
                                 self.playback_level = 0.0;
                                 return Task::done(Message::TtsFinished);
                             }
@@ -161,17 +166,24 @@ impl App {
                         let target_level = (rms * 10.0).min(1.0);
                         self.audio_level = self.audio_level * 0.8 + target_level * 0.2;
 
-                        if rms < 0.01 {
-                            self.silence_frames += 1;
-                        } else {
+                        if rms >= 0.01 {
+                            self.has_speech = true;
                             self.silence_frames = 0;
+                        } else {
+                            self.silence_frames += 1;
                         }
 
                         self.audio_buffer.extend(samples);
 
                         // Stop after ~1.5 seconds of silence
                         if self.audio_buffer.len() > 16000 && self.silence_frames > 90 {
-                            return Task::done(Message::StopListening);
+                            if self.has_speech {
+                                return Task::done(Message::StopListening);
+                            } else {
+                                // No speech detected, just reset and keep listening
+                                self.audio_buffer.clear();
+                                self.silence_frames = 0;
+                            }
                         }
                     }
                 }
@@ -187,16 +199,25 @@ impl App {
             Message::ClaudeReady(result) => match result {
                 Ok(response) => {
                     let is_complete = response.contains("APPLICATION_COMPLETE");
-                    let display_text = response.replace("APPLICATION_COMPLETE", "").trim().to_string();
+                    let display_text = response
+                        .replace("APPLICATION_COMPLETE", "")
+                        .trim()
+                        .to_string();
 
-                    self.messages.push(ChatMessage::assistant(&display_text));
-                    self.transcript.push(Line {
-                        role: Role::Assistant,
-                        text: display_text.clone(),
-                    });
+                    self.messages
+                        .push(claude::Message::assistant(&display_text));
 
                     if is_complete {
+                        // Show text immediately when done since there's no next interaction
+                        self.transcript.push(Line {
+                            role: Role::Assistant,
+                            text: display_text.clone(),
+                        });
                         self.state = State::Done;
+                    } else {
+                        self.state = State::Processing {
+                            pending_text: Some(display_text.clone()),
+                        };
                     }
 
                     if let Some(tts) = &self.elevenlabs {
@@ -206,11 +227,25 @@ impl App {
                             Message::TtsReady,
                         )
                     } else {
+                        // No TTS — show text immediately as fallback
+                        if !is_complete {
+                            if let State::Processing {
+                                ref mut pending_text,
+                            } = self.state
+                            {
+                                if let Some(text) = pending_text.take() {
+                                    self.transcript.push(Line {
+                                        role: Role::Assistant,
+                                        text,
+                                    });
+                                }
+                            }
+                        }
                         Task::none()
                     }
                 }
                 Err(e) => {
-                    eprintln!("Claude error: {}", e);
+                    log::error!("Claude error: {}", e);
                     self.transcript.push(Line {
                         role: Role::Assistant,
                         text: format!("Error: {}", e),
@@ -222,20 +257,45 @@ impl App {
 
             Message::TtsReady(result) => match result {
                 Ok(audio_data) => {
+                    // Reveal the assistant's response now that audio is ready
+                    let response_text = if let State::Processing {
+                        ref mut pending_text,
+                    } = self.state
+                    {
+                        pending_text.take()
+                    } else {
+                        None
+                    };
+
+                    if let Some(text) = &response_text {
+                        self.transcript.push(Line {
+                            role: Role::Assistant,
+                            text: text.clone(),
+                        });
+                    }
+
                     if let Some(ref playback) = self.playback {
                         playback.play(audio_data);
                         self.state = State::Speaking {
-                            text: self.transcript.last().map(|l| l.text.clone()).unwrap_or_default(),
+                            text: response_text.unwrap_or_default(),
                         };
                     }
                     Task::none()
                 }
                 Err(e) => {
-                    eprintln!("TTS error: {}", e);
-                    self.transcript.push(Line {
-                        role: Role::Assistant,
-                        text: format!("Error: {}", e),
-                    });
+                    log::error!("TTS error: {}", e);
+                    // TTS failed — show pending text as fallback
+                    if let State::Processing {
+                        ref mut pending_text,
+                    } = self.state
+                    {
+                        if let Some(text) = pending_text.take() {
+                            self.transcript.push(Line {
+                                role: Role::Assistant,
+                                text,
+                            });
+                        }
+                    }
                     self.state = State::Done;
                     Task::none()
                 }
@@ -254,13 +314,14 @@ impl App {
                 self.audio_buffer.clear();
                 self.audio_level = 0.0;
                 self.silence_frames = 0;
+                self.has_speech = false;
                 self.capture = audio::Capture::new().ok();
                 Task::none()
             }
 
             Message::StopListening => {
                 self.capture = None;
-                self.state = State::Processing;
+                self.state = State::Processing { pending_text: None };
                 self.audio_level = 0.0;
 
                 let buffer = std::mem::take(&mut self.audio_buffer);
@@ -280,7 +341,7 @@ impl App {
             Message::TranscriptionReady(result) => match result {
                 Ok(transcript) => {
                     let transcript = transcript.trim().to_string();
-                    eprintln!("User said: {}", transcript);
+                    log::debug!("User said: {}", transcript);
 
                     // Filter out noise/static
                     let is_noise = transcript.is_empty()
@@ -289,11 +350,11 @@ impl App {
                         || transcript.to_lowercase().contains("static");
 
                     if is_noise {
-                        eprintln!("Filtered noise: {:?}", transcript);
+                        log::debug!("Filtered noise: {:?}", transcript);
                         return Task::done(Message::StartListening);
                     }
 
-                    self.messages.push(ChatMessage::user(&transcript));
+                    self.messages.push(claude::Message::user(&transcript));
                     self.transcript.push(Line {
                         role: Role::User,
                         text: transcript,
@@ -311,7 +372,7 @@ impl App {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Transcription error: {}", e);
+                    log::debug!("Transcription error: {}", e);
                     self.transcript.push(Line {
                         role: Role::Assistant,
                         text: format!("Error: {}", e),
@@ -351,25 +412,26 @@ impl App {
             })
             .collect();
 
-        let transcript_view: Element<'_, Message> = if transcript_lines.is_empty() {
-            text("Say something to begin...")
-                .size(18)
-                .color(dim_color)
-                .into()
+        let transcript_view = if transcript_lines.is_empty() {
+            bottom(text("Say something to begin...").size(18).color(dim_color)).center_x(Fill)
         } else {
-            scrollable(
-                column(transcript_lines)
-                    .spacing(8)
-                    .padding(10),
+            bottom(
+                scrollable(column(transcript_lines).spacing(8).padding(10))
+                    .spacing(0)
+                    .direction(scrollable::Direction::Vertical(
+                        scrollable::Scrollbar::new()
+                            .width(1)
+                            .margin(1)
+                            .scroller_width(3),
+                    ))
+                    .anchor_bottom(),
             )
-            .height(150)
-            .into()
         };
 
         // Status indicator
         let status = match &self.state {
             State::Listening => "Listening...",
-            State::Processing => "Processing...",
+            State::Processing { .. } => "Processing...",
             State::Speaking { .. } => "Speaking...",
             State::Done => "Done",
             State::Idle => "",
@@ -380,13 +442,19 @@ impl App {
             _ => dim_color,
         };
 
-        let content = column![
-            container(circle).width(300).height(300),
-            container(text(status).size(14).color(status_color)).padding(5),
-            container(transcript_view).width(500).padding(10),
-        ]
-        .spacing(10)
-        .align_x(iced::Alignment::Center);
+        let content = stack![
+            container(
+                column![
+                    container(circle).width(300).height(300),
+                    container(text(status).size(14).color(status_color)).padding(5),
+                ]
+                .padding(padding::bottom(300))
+                .spacing(10)
+                .align_x(Center)
+            )
+            .center_y(Fill),
+            bottom(transcript_view).width(600).padding(10),
+        ];
 
         center(content).into()
     }
@@ -401,7 +469,7 @@ impl App {
     fn theme(&self) -> Theme {
         match self.theme_mode {
             iced::theme::Mode::Light => theme::paper(),
-            iced::theme::Mode::Dark | iced::theme::Mode::None => theme::paper_dark(),
+            _ => theme::paper_dark(),
         }
     }
 }
@@ -442,7 +510,7 @@ impl canvas::Program<Message> for App {
                     };
                     (base_pulse + audio_pulse, Color::from_rgb(0.85, 0.2, 0.2))
                 }
-                State::Processing => (
+                State::Processing { .. } => (
                     10.0 * (t * 8.0).sin().abs(),
                     Color::from_rgb(1.0, 0.6, 0.2), // Orange
                 ),
