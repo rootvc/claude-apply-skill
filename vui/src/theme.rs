@@ -68,7 +68,7 @@ pub fn fade(theme: &Theme) -> container::Style {
     let bg = theme.palette().background;
     let bg_transparent = Color { a: 0.0, ..bg };
     gradient::Linear::new(std::f32::consts::PI)
-        .add_stop(0.6, bg)
-        .add_stop(0.8, bg_transparent)
+        .add_stop(0.4, bg)
+        .add_stop(0.7, bg_transparent)
         .into()
 }

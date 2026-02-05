@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::theme;
 
 /// The form fields for a Root Ventures application
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Form {
     pub name: String,
     pub email: String,
@@ -23,6 +23,11 @@ pub struct ToolInput {
 }
 
 impl Form {
+    /// Returns true when the form is empty
+    pub fn is_empty(&self) -> bool {
+        self == &Form::default()
+    }
+
     /// Returns true when required fields are filled
     pub fn is_ready(&self) -> bool {
         !self.name.trim().is_empty() && !self.email.trim().is_empty()
@@ -151,7 +156,7 @@ impl Form {
 
         container(stack![bottom_right(submit).padding(16), fields])
             .style(theme::sidebar)
-            .width(280)
+            .width(Fill)
             .height(Fill)
             .into()
     }

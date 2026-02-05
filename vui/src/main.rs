@@ -6,9 +6,7 @@ mod theme;
 use api::claude;
 use iced::Length::FillPortion;
 use iced::time::{self, milliseconds};
-use iced::widget::{
-    bottom, canvas, column, container, right, row, scrollable, space, stack, text,
-};
+use iced::widget::{bottom, canvas, column, container, right, row, scrollable, space, stack, text};
 use iced::{
     Center, Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Task, Theme, color,
     mouse, padding, system,
@@ -220,7 +218,8 @@ impl App {
                         });
                     }
                     if !blocks.is_empty() {
-                        self.messages.push(claude::Message::assistant_blocks(blocks));
+                        self.messages
+                            .push(claude::Message::assistant_blocks(blocks));
                     }
 
                     // Process tool uses if stop_reason is "tool_use"
@@ -235,10 +234,8 @@ impl App {
                                     if tool_input.action == "submit" && self.form.is_ready() {
                                         submit_requested = true;
                                     }
-                                    self.messages.push(claude::Message::tool_result(
-                                        &tu.id,
-                                        &tool_result,
-                                    ));
+                                    self.messages
+                                        .push(claude::Message::tool_result(&tu.id, &tool_result));
                                 } else {
                                     self.messages.push(claude::Message::tool_result(
                                         &tu.id,
@@ -529,15 +526,26 @@ impl App {
         ]
         .width(Fill);
 
-        let sidebar = self.form.view(
-            if self.form.is_ready() {
-                Some(Message::SubmitForm)
-            } else {
-                None
-            },
-        );
+        // let sidebar = (!self.form.is_empty()).then(|| {
+        //     self.form.view(if self.form.is_ready() {
+        //         Some(Message::SubmitForm)
+        //     } else {
+        //         None
+        //     })
+        // });
 
-        row![voice_area, sidebar].into()
+        let Some(sidebar) = (!self.form.is_empty()).then(|| {
+            self.form
+                .view(self.form.is_ready().then(|| Message::SubmitForm))
+        }) else {
+            return voice_area.into();
+        };
+
+        stack![
+            row![voice_area, space().width(280)],
+            right(container(sidebar).width(280))
+        ]
+        .into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
