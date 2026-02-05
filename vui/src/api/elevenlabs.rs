@@ -29,7 +29,7 @@ impl Client {
 
         let body = serde_json::json!({
             "text": text,
-            "model_id": "eleven_monolingual_v1",
+            "model_id": "eleven_turbo_v2_5",
             "voice_settings": {
                 "stability": 0.5,
                 "similarity_boost": 0.75
@@ -65,8 +65,9 @@ impl Client {
             .map_err(|e| e.to_string())?;
 
         let form = reqwest::multipart::Form::new()
-            .part("audio", part)
-            .text("model_id", "scribe_v1");
+            .part("file", part)
+            .text("model_id", "scribe_v1")
+            .text("language_code", "en");
 
         let res = self
             .http

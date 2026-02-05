@@ -84,7 +84,7 @@ impl App {
             start: Instant::now(),
             cache: canvas::Cache::default(),
             messages: Vec::new(),
-            subtitle: "Starting...".to_string(),
+            subtitle: "Say something to begin...".to_string(),
             elevenlabs,
             chat,
             playback,
@@ -93,18 +93,8 @@ impl App {
             silence_frames: 0,
         };
 
-        // Get initial greeting from Claude
-        let task = if let Some(chat) = &app.chat {
-            let chat = chat.clone();
-            Task::perform(
-                async move { chat.send(&[]).await },
-                Message::ClaudeReady,
-            )
-        } else {
-            Task::none()
-        };
-
-        (app, task)
+        // Start listening for the user
+        (app, Task::done(Message::StartListening))
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
