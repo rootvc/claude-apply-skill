@@ -112,6 +112,7 @@ impl Playback {
                                 let tracked_source = Level::new(f32_source, level);
 
                                 sink.append(tracked_source);
+                                sink.play(); // Ensure sink is playing (might be paused from previous barge-in)
 
                                 // Poll level while playing, also check for commands
                                 while !sink.empty() {

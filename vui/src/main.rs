@@ -120,10 +120,10 @@ impl App {
         let capture = audio::Capture::new().ok();
 
         let app = Self {
-            state: State::Idle,
+            state: State::Processing { pending_text: None },
             start: Instant::now(),
             cache: canvas::Cache::default(),
-            messages: Vec::new(),
+            messages: vec![claude::Message::user("Hi!")], // Initial greeting trigger (not shown in transcript)
             transcript: Vec::new(),
             form: form::Form::default(),
             elevenlabs,
@@ -140,8 +140,21 @@ impl App {
             theme_mode: iced::theme::Mode::Dark,
         };
 
+        // Start with a greeting from Claude (send "Hi!" to trigger first response)
+        let greeting_task = if let Some(chat) = &app.chat {
+            let chat = chat.clone();
+            let messages = vec![claude::Message::user("Hi!")];
+            let tools = vec![form::Form::tool_definition()];
+            Task::perform(
+                async move { chat.send(&messages, &tools).await },
+                Message::ClaudeReady,
+            )
+        } else {
+            Task::none()
+        };
+
         let task = Task::batch([
-            Task::done(Message::StartListening),
+            greeting_task,
             system::theme().map(Message::ThemeChanged),
         ]);
 
@@ -235,7 +248,7 @@ impl App {
 
                         self.audio_buffer.extend(samples);
 
-                        if self.audio_buffer.len() > 16000 && self.silence_frames > 90 {
+                        if self.audio_buffer.len() > 16000 && self.silence_frames > 150 {
                             if self.has_speech {
                                 return Task::done(Message::StopListening);
                             } else {
@@ -268,7 +281,7 @@ impl App {
                         self.audio_buffer.extend(samples);
 
                         // Stop after ~1.5 seconds of silence
-                        if self.audio_buffer.len() > 16000 && self.silence_frames > 90 {
+                        if self.audio_buffer.len() > 16000 && self.silence_frames > 150 {
                             if self.has_speech {
                                 return Task::done(Message::StopListening);
                             } else {
@@ -531,7 +544,14 @@ impl App {
 
             Message::TranscriptionReady(result) => match result {
                 Ok(transcript) => {
-                    let transcript = transcript.trim().to_string();
+                    // Strip trailing parentheticals like "(laughs)" or "(background noise)"
+                    let transcript = transcript
+                        .trim()
+                        .trim_end_matches(|c: char| c == ')' || c.is_whitespace())
+                        .rsplit_once('(')
+                        .map(|(before, _)| before.trim())
+                        .unwrap_or(transcript.trim())
+                        .to_string();
                     log::debug!("User said: {}", transcript);
 
                     // Filter out noise/static
@@ -614,7 +634,7 @@ impl App {
             .collect();
 
         let transcript_view = if transcript_lines.is_empty() {
-            bottom(text("Say something to begin...").size(16).color(dim_color)).center_x(Fill)
+            bottom(text("").size(16)).center_x(Fill) // Empty while waiting for greeting
         } else {
             bottom(
                 scrollable(
@@ -733,7 +753,7 @@ impl canvas::Program<Message> for App {
                 frame.stroke(
                     &path,
                     canvas::Stroke::default()
-                        .with_color(Color::from_rgb(1.0, 0.6, 0.2))
+                        .with_color(Color::from_rgb(0.35, 0.33, 0.30))
                         .with_width(4.0),
                 );
             } else {
